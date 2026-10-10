@@ -15,6 +15,14 @@ import type {
 
 export type DocumentId = string;
 
+export interface GoogleDriveMeta {
+  fileId: string;
+  name: string;
+  modifiedTime?: string | undefined;
+  version?: string | undefined;
+  mimeType?: string | undefined;
+}
+
 /** A loaded source PDF kept in memory for rendering and export. */
 export interface SourceEntry {
   id: SourceId;
@@ -26,7 +34,9 @@ export interface SourceEntry {
    * Where this source came from. Blank sheets created by the editor are
    * 'blank' — they never claim the document name and stay out of recents.
    */
-  origin?: 'file' | 'blank';
+  origin?: 'file' | 'blank' | 'google-drive' | undefined;
+  /** Google Drive metadata when opened from Drive. */
+  googleDrive?: GoogleDriveMeta | undefined;
 }
 
 /** The undoable part of one document's state. Immutable snapshots. */
@@ -36,6 +46,8 @@ export interface DocSnapshot {
 }
 
 export const EMPTY_DOC: DocSnapshot = { pages: [], annotations: {} };
+
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /**
  * One open document (a tab): its pages/annotations, per-document undo/redo
@@ -57,6 +69,12 @@ export interface DocumentState {
   docName: string;
   /** True once a real file has claimed the document name. */
   docNameClaimed: boolean;
+  /** Google Drive metadata when this document originated from Google Drive. */
+  googleDrive?: GoogleDriveMeta | undefined;
+  /** Status of the save operation for this tab. */
+  saveStatus?: SaveStatus | undefined;
+  /** The snapshot history length at the time the document was last saved. */
+  savedPastLength?: number | undefined;
 }
 
 /** A document closed during this session, restorable without re-picking the file. */

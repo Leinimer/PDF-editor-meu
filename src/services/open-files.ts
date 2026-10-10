@@ -13,7 +13,7 @@ import { classifyPdfError, PdfError } from '../pdf-core/errors';
 import { renderService } from '../rendering/render-service';
 import { isPristineBlankDocument } from '../editor-state/selectors';
 import { selectActiveDocument, useEditorStore } from '../editor-state/store';
-import type { DocumentId, RecentDoc } from '../editor-state/types';
+import type { DocumentId, GoogleDriveMeta, RecentDoc } from '../editor-state/types';
 import { closeDocument } from './new-document';
 
 export interface OpenResult {
@@ -27,6 +27,10 @@ export interface OpenOptions {
   mode?: 'open' | 'merge';
   /** Merge only: zero-based page position to insert at. */
   insertAt?: number;
+  /** Google Drive metadata when opening from Drive. */
+  googleDrive?: GoogleDriveMeta;
+  /** Origin identifier */
+  origin?: 'file' | 'blank' | 'google-drive';
 }
 
 export async function openFiles(
@@ -66,7 +70,12 @@ export async function openFiles(
         mode === 'merge'
           ? mergeTargetId
           : useEditorStore.getState().createDocument({ activate: true });
-      const added = await addSourceFromBytes(file.name, bytes, { documentId, insertAt });
+      const added = await addSourceFromBytes(file.name, bytes, {
+        documentId,
+        insertAt,
+        googleDrive: options?.googleDrive,
+        origin: options?.origin,
+      });
       if (insertAt !== undefined) insertAt += added;
       result.openedPages += added;
       result.openedFiles += 1;
@@ -105,7 +114,12 @@ async function discardPristineBlankActive(): Promise<void> {
 async function addSourceFromBytes(
   name: string,
   bytes: Uint8Array,
-  options: { documentId?: DocumentId | undefined; insertAt?: number | undefined },
+  options: {
+    documentId?: DocumentId | undefined;
+    insertAt?: number | undefined;
+    googleDrive?: GoogleDriveMeta | undefined;
+    origin?: 'file' | 'blank' | 'google-drive' | undefined;
+  },
 ): Promise<number> {
   const sourceId = crypto.randomUUID();
   const registered = await renderService.register(sourceId, bytes);
@@ -120,7 +134,8 @@ async function addSourceFromBytes(
       bytes,
       pageCount: registered.pageCount,
       pageInfos: registered.pageInfos,
-      origin: 'file',
+      origin: options.origin ?? (options.googleDrive ? 'google-drive' : 'file'),
+      googleDrive: options.googleDrive,
     },
     {
       ...(options.documentId !== undefined ? { documentId: options.documentId } : {}),

@@ -34,6 +34,11 @@ export function Sidebar(): JSX.Element {
       if (event.shiftKey) rangeSelect(pageId);
       else if (event.metaKey || event.ctrlKey) toggleSelect(pageId);
       else selectOnly(pageId);
+
+      const targetEl = document.getElementById(`page-${pageId}`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     },
     [rangeSelect, toggleSelect, selectOnly],
   );

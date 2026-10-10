@@ -34,7 +34,9 @@ import type {
   DocumentId,
   DocumentState,
   EditorSnapshot,
+  GoogleDriveMeta,
   RecentDoc,
+  SaveStatus,
   SourceEntry,
   Tool,
 } from './types';
@@ -61,6 +63,8 @@ export interface EditorActions {
   toggleLeftSidebar(): void;
   toggleRightSidebar(): void;
   setShowRightSidebar(show: boolean): void;
+  setDocumentSaveStatus(documentId: DocumentId, status: SaveStatus): void;
+  markDocumentSaved(documentId: DocumentId, googleDrive?: GoogleDriveMeta): void;
 
   selectOnly(id: PageId): void;
   toggleSelect(id: PageId): void;
@@ -102,7 +106,7 @@ export const initialSnapshot: EditorSnapshot = {
   recents: [],
   busy: null,
   showLeftSidebar: true,
-  showRightSidebar: true,
+  showRightSidebar: false,
 };
 
 export function emptyDocumentState(id: DocumentId, name: string): DocumentState {
@@ -298,6 +302,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => {
         docName: claims ? entry.name.replace(/\.pdf$/i, '') || docState.docName : docState.docName,
         docNameClaimed: docState.docNameClaimed || claims,
         activePageId: docState.activePageId ?? newPages[0]?.id ?? null,
+        ...(claims && entry.googleDrive ? { googleDrive: entry.googleDrive } : {}),
       });
       set((current) => ({ sources: { ...current.sources, [entry.id]: entry } }));
     },
@@ -325,6 +330,20 @@ export const useEditorStore = create<EditorStore>()((set, get) => {
 
     setShowRightSidebar(show) {
       set({ showRightSidebar: show });
+    },
+
+    setDocumentSaveStatus(documentId, status) {
+      patchDocument(documentId, { saveStatus: status });
+    },
+
+    markDocumentSaved(documentId, googleDrive) {
+      const doc = get().documents[documentId];
+      if (!doc) return;
+      patchDocument(documentId, {
+        saveStatus: 'saved',
+        savedPastLength: doc.past.length,
+        ...(googleDrive ? { googleDrive } : {}),
+      });
     },
 
     selectOnly(id) {

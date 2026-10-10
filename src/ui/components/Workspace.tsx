@@ -54,9 +54,9 @@ export function Workspace(): JSX.Element {
       <div
         className={`workspace-panes ${!showLeftSidebar ? 'hide-left-sidebar' : ''} ${!showRightSidebar ? 'hide-right-sidebar' : ''}`}
       >
-        <Sidebar />
+        {showLeftSidebar && <Sidebar />}
         <CanvasView />
-        <PropertiesPanel />
+        {showRightSidebar && <PropertiesPanel />}
       </div>
 
       <SplitDialog open={dialog === 'split'} onClose={close} />

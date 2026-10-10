@@ -14,6 +14,9 @@ export interface PickerDoc {
   name: string;
   mimeType: string;
   sizeBytes?: number;
+  lastEditedUtc?: number;
+  version?: string;
+  modifiedTime?: string;
 }
 
 export interface PickerResponse {

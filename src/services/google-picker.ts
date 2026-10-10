@@ -177,8 +177,29 @@ export async function openPdfFromGoogleDrive(): Promise<OpenGoogleDriveResult | 
     const fileName = picked.name.toLowerCase().endsWith('.pdf') ? picked.name : `${picked.name}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
 
-    // 4. Open in editor reusing existing openFiles() pipeline
-    const openResult = await openFiles([file]);
+    // 4. Fetch metadata if available
+    let modifiedTime: string | undefined;
+    let version: string | undefined;
+    try {
+      const { getGoogleDriveFileMetadata } = await import('./google-drive');
+      const meta = await getGoogleDriveFileMetadata(picked.id, token);
+      modifiedTime = meta.modifiedTime;
+      version = meta.version;
+    } catch {
+      // Non-fatal if metadata fetch fails
+    }
+
+    // 5. Open in editor reusing existing openFiles() pipeline with GoogleDrive metadata
+    const openResult = await openFiles([file], {
+      origin: 'google-drive',
+      googleDrive: {
+        fileId: picked.id,
+        name: picked.name,
+        modifiedTime,
+        version,
+        mimeType: picked.mimeType,
+      },
+    });
 
     return { file, openResult };
   } finally {

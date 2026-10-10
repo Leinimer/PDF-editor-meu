@@ -163,6 +163,31 @@ export async function requestGoogleAccessToken(customClientId?: string): Promise
 }
 
 /**
+ * Gets file metadata (modifiedTime, version, name) from Google Drive API v3.
+ */
+export async function getGoogleDriveFileMetadata(
+  fileId: string,
+  token: string,
+): Promise<{ id: string; name: string; modifiedTime?: string; version?: string }> {
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,modifiedTime,version,mimeType`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      cachedToken = null;
+      throw new Error('Sessão do Google Drive expirada. Por favor, autorize novamente.');
+    }
+    throw new Error(`Falha ao obter metadados do Google Drive (código HTTP ${response.status}).`);
+  }
+
+  return response.json();
+}
+
+/**
  * Downloads a file directly from Google Drive API v3 as a Blob.
  */
 export async function downloadGoogleDriveFile(fileId: string, token: string): Promise<Blob> {
@@ -188,6 +213,50 @@ export async function downloadGoogleDriveFile(fileId: string, token: string): Pr
   }
 
   return response.blob();
+}
+
+/**
+ * Updates an existing file's binary content in Google Drive API v3 using multipart/upload
+ * or direct binary upload to /upload/drive/v3/files/{fileId}?uploadType=media.
+ */
+export async function updateGoogleDriveFile(
+  fileId: string,
+  token: string,
+  pdfBytes: Uint8Array,
+): Promise<{ id: string; name: string; modifiedTime?: string; version?: string }> {
+  const url = `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,modifiedTime,version`;
+
+  const blob = new Blob([pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer], {
+    type: 'application/pdf',
+  });
+
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/pdf',
+    },
+    body: blob,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      cachedToken = null;
+      throw new Error('Sessão expirada. Por favor, autorize novamente a conta Google.');
+    }
+    if (response.status === 403) {
+      throw new Error(
+        'Permissão negada ao salvar no Google Drive. Verifique se o app possui autorização de escrita para o arquivo selecionado.',
+      );
+    }
+    if (response.status === 404) {
+      throw new Error('Arquivo não encontrado no Google Drive.');
+    }
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Falha ao salvar no Google Drive (${response.status}): ${errText || response.statusText}`);
+  }
+
+  return response.json();
 }
 
 // Re-export picker functions for backward-compatibility

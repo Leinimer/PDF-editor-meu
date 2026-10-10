@@ -382,27 +382,21 @@ button:disabled {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr) 16rem;
   transition: grid-template-columns 0.15s ease;
+  overflow: hidden;
 }
 
 .workspace-panes.hide-left-sidebar {
-  grid-template-columns: 0 minmax(0, 1fr) 16rem;
+  grid-template-columns: minmax(0, 1fr) 16rem;
 }
 
 .workspace-panes.hide-right-sidebar {
-  grid-template-columns: 15rem minmax(0, 1fr) 0;
+  grid-template-columns: 15rem minmax(0, 1fr);
 }
 
 .workspace-panes.hide-left-sidebar.hide-right-sidebar {
-  grid-template-columns: 0 minmax(0, 1fr) 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.workspace-panes.hide-left-sidebar .sidebar {
-  display: none;
-}
-
-.workspace-panes.hide-right-sidebar .properties-panel {
-  display: none;
-}
 
 /* Toolbar formatting controls */
 .toolbar-select {
@@ -452,6 +446,61 @@ button:disabled {
   width: 0;
   height: 0;
 }
+
+/* Save button */
+.save-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  color: var(--text);
+  transition: color 0.15s, background 0.15s;
+}
+
+.save-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.save-button.is-saving {
+  color: var(--accent-strong);
+  cursor: wait;
+}
+
+.save-button.is-saved {
+  color: #10b981;
+}
+
+.save-button.is-error {
+  color: var(--error);
+}
+
+.save-button.has-unsaved::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
 
 
 /* --- Document tabs ---------------------------------------------------------------- */
@@ -791,15 +840,25 @@ button:disabled {
   min-height: 0;
   min-width: 0;
   background: var(--surface);
+  height: 100%;
 }
 
 .canvas-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  display: grid;
-  place-items: center;
-  padding: 1.2rem;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 1.5rem 1rem 3rem;
+  scroll-behavior: smooth;
+}
+
+.canvas-pages-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  min-width: min-content;
+  margin: 0 auto;
 }
 
 .canvas-placeholder {
@@ -811,13 +870,20 @@ button:disabled {
 .page-stage {
   position: relative;
   flex: none;
-  box-shadow: var(--shadow);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
   background: #fff;
+  border-radius: 2px;
+  transition: box-shadow 0.15s ease;
+}
+
+.page-stage.is-active-page {
+  box-shadow: 0 0 0 2px var(--accent-strong), 0 4px 14px rgba(0, 0, 0, 0.1);
 }
 
 .page-canvas {
   display: block;
 }
+
 
 .annotation-layer {
   position: absolute;

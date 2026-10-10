@@ -48,13 +48,17 @@ function progressHandler(): (done: number, total: number) => void {
   };
 }
 
-async function assembleAndDownload(
+/**
+ * Assembles the full active document or given pages into PDF bytes.
+ * Reusable for local download, print, or direct Google Drive upload.
+ */
+export async function buildDocumentPdfBytes(
   docState: DocumentState,
-  pageIds: readonly PageId[],
-  fileName: string,
-): Promise<void> {
-  await withBusy('Building PDF', async () => {
-    const input = buildAssembleInput(useEditorStore.getState(), docState, pageIds);
+  pageIds?: readonly PageId[],
+): Promise<Uint8Array> {
+  const ids = pageIds ?? allPageIds(docState);
+  return withBusy('Building PDF', async () => {
+    const input = buildAssembleInput(useEditorStore.getState(), docState, ids);
     const [bytes] = await pdfWorker.assemble(
       [{ pages: input.pages }],
       input.sources,
@@ -62,9 +66,19 @@ async function assembleAndDownload(
       progressHandler(),
     );
     if (!bytes) throw new Error('Export produced no document.');
-    downloadPdf(bytes, fileName);
+    return bytes;
   });
 }
+
+async function assembleAndDownload(
+  docState: DocumentState,
+  pageIds: readonly PageId[],
+  fileName: string,
+): Promise<void> {
+  const bytes = await buildDocumentPdfBytes(docState, pageIds);
+  downloadPdf(bytes, fileName);
+}
+
 
 /** Exports the whole active document — always all pages, selection ignored. */
 /**

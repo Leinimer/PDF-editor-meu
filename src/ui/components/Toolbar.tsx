@@ -15,6 +15,7 @@ import { addBlankPage } from '../../services/new-document';
 import { openFiles, reopenRecent } from '../../services/open-files';
 import { placeImageFromFile } from '../../services/place-image';
 import {
+  buildDocumentPdfBytes,
   exportDocument,
   exportPagesAsZip,
   exportSelection,
@@ -26,10 +27,13 @@ import { THEME_LABELS, useTheme } from '../hooks/useTheme';
 import { Icon, type IconName } from '../icons';
 import {
   disconnectGoogleAccount,
+  getGoogleDriveFileMetadata,
   hasGoogleAuth,
   requestGoogleAccessToken,
+  updateGoogleDriveFile,
 } from '../../services/google-drive';
 import { openPdfFromGoogleDrive } from '../../services/google-picker';
+import { downloadPdf, safeBaseName } from '../../export/download';
 
 export interface ToolbarProps {
   onSplit(): void;
@@ -214,6 +218,107 @@ export function Toolbar({
   const setTextColor = (color: string) => {
     if (activeAnnotation && 'color' in activeAnnotation) {
       updateAnnotation(activeAnnotation.id, { color });
+    }
+  };
+
+  const activeDocState = useActiveDoc((doc) => doc);
+  const sources = useEditorStore((state) => state.sources);
+  const setDocumentSaveStatus = useEditorStore((state) => state.setDocumentSaveStatus);
+  const markDocumentSaved = useEditorStore((state) => state.markDocumentSaved);
+
+  const saveStatus = activeDocState?.saveStatus ?? 'idle';
+  const hasUnsavedChanges =
+    activeDocState &&
+    (activeDocState.savedPastLength === undefined
+      ? activeDocState.past.length > 0
+      : activeDocState.past.length !== activeDocState.savedPastLength);
+
+  const handleSave = async () => {
+    if (!activeDocState || activeDocState.doc.pages.length === 0 || saveStatus === 'saving') {
+      return;
+    }
+
+    const docId = activeDocState.id;
+    setDocumentSaveStatus(docId, 'saving');
+
+    try {
+      // 1. Identify source files contributing pages
+      const referencedSourceIds = new Set<string>();
+      for (const p of activeDocState.doc.pages) {
+        referencedSourceIds.add(p.sourceId);
+      }
+
+      const driveSources = [...referencedSourceIds]
+        .map((sId) => sources[sId])
+        .filter((s): s is NonNullable<typeof s> => Boolean(s?.googleDrive?.fileId));
+
+      // 2. Check if this document can be saved to Google Drive
+      if (driveSources.length === 1 && (activeDocState.googleDrive || driveSources[0]?.googleDrive)) {
+        const driveMeta = activeDocState.googleDrive || driveSources[0]!.googleDrive!;
+
+        // Check for conflicts: fetch current remote metadata if modifiedTime is tracked
+        const token = await requestGoogleAccessToken();
+
+        if (driveMeta.modifiedTime) {
+          try {
+            const remoteMeta = await getGoogleDriveFileMetadata(driveMeta.fileId, token);
+            if (remoteMeta.modifiedTime && remoteMeta.modifiedTime !== driveMeta.modifiedTime) {
+              const proceed = window.confirm(
+                `O arquivo "${driveMeta.name}" foi modificado no Google Drive por outra sessão desde que foi aberto.\n\nDeseja sobrescrever com suas alterações locais?`,
+              );
+              if (!proceed) {
+                // Allow user to download a copy instead
+                const pdfBytes = await buildDocumentPdfBytes(activeDocState);
+                downloadPdf(pdfBytes, `${safeBaseName(activeDocState.docName)}_copia.pdf`);
+                setDocumentSaveStatus(docId, 'idle');
+                toasts.push('info', 'Salvamento no Drive cancelado; cópia baixada localmente.');
+                return;
+              }
+            }
+          } catch (metaErr) {
+            console.warn('Não foi possível verificar versão remota:', metaErr);
+          }
+        }
+
+        // Assemble full document with all pages, annotations and rotations
+        const pdfBytes = await buildDocumentPdfBytes(activeDocState);
+
+        // Upload to Drive files.update
+        const updated = await updateGoogleDriveFile(driveMeta.fileId, token, pdfBytes);
+
+        markDocumentSaved(docId, {
+          fileId: driveMeta.fileId,
+          name: updated.name || driveMeta.name,
+          modifiedTime: updated.modifiedTime,
+          version: updated.version,
+        });
+
+        toasts.push('success', `Arquivo "${driveMeta.name}" salvo no Google Drive com sucesso!`);
+      } else if (driveSources.length > 1) {
+        // Document has pages from multiple Google Drive files!
+        const proceed = window.confirm(
+          'Este documento é composto por páginas de múltiplos arquivos do Google Drive. Deseja baixar o resultado como um novo arquivo PDF em vez de sobrescrever um deles?',
+        );
+        const pdfBytes = await buildDocumentPdfBytes(activeDocState);
+        downloadPdf(pdfBytes, `${safeBaseName(activeDocState.docName)}.pdf`);
+        markDocumentSaved(docId);
+        toasts.push(
+          'info',
+          proceed
+            ? 'PDF composto salvo via download.'
+            : 'PDF baixado para preservar os arquivos originais.',
+        );
+      } else {
+        // Local file or blank document
+        const pdfBytes = await buildDocumentPdfBytes(activeDocState);
+        downloadPdf(pdfBytes, `${safeBaseName(activeDocState.docName)}.pdf`);
+        markDocumentSaved(docId);
+        toasts.push('success', 'Documento baixado localmente.');
+      }
+    } catch (error) {
+      setDocumentSaveStatus(docId, 'error');
+      const msg = error instanceof Error ? error.message : 'Falha ao salvar documento.';
+      toasts.push('error', msg);
     }
   };
 
@@ -916,8 +1021,8 @@ export function Toolbar({
         </button>
       </div>
 
-      {/* Extreme Right: Dark/Light Mode Theme Toggle */}
-      <div className="toolbar-group toolbar-end" aria-label="Theme">
+      {/* Extreme Right: Dark/Light Mode Theme Toggle & Save Button */}
+      <div className="toolbar-group toolbar-end" aria-label="Theme and Save">
         <button
           type="button"
           className="theme-toggle"
@@ -927,6 +1032,34 @@ export function Toolbar({
         >
           <Icon name="theme" size={15} />
           <span>{THEME_LABELS[theme]}</span>
+        </button>
+
+        {/* Botão Salvar na extrema direita */}
+        <button
+          type="button"
+          className={`save-button is-${saveStatus} ${hasUnsavedChanges ? 'has-unsaved' : ''}`}
+          aria-label="Salvar alterações"
+          title={
+            saveStatus === 'saving'
+              ? 'Salvando alterações...'
+              : saveStatus === 'saved'
+                ? 'Salvo com sucesso'
+                : saveStatus === 'error'
+                  ? 'Erro ao salvar. Clique para tentar novamente.'
+                  : 'Salvar alterações'
+          }
+          disabled={!activeDocState || activeDocState.doc.pages.length === 0 || saveStatus === 'saving'}
+          onClick={handleSave}
+        >
+          {saveStatus === 'saving' ? (
+            <Icon name="spinner" className="spin-icon" size={16} />
+          ) : saveStatus === 'saved' ? (
+            <Icon name="check" size={16} />
+          ) : saveStatus === 'error' ? (
+            <Icon name="alertTriangle" size={16} />
+          ) : (
+            <Icon name="save" size={16} />
+          )}
         </button>
       </div>
 
