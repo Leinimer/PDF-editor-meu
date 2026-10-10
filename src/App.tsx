@@ -10,7 +10,6 @@ import { openFiles } from './services/open-files';
 import { BusyOverlay } from './ui/components/BusyOverlay';
 import { Workspace } from './ui/components/Workspace';
 import { useFileDrop } from './ui/hooks/useFileDrop';
-import { THEME_LABELS, useTheme } from './ui/hooks/useTheme';
 import { Icon } from './ui/icons';
 import { ToastProvider, useToasts } from './ui/toast/Toasts';
 
@@ -25,7 +24,6 @@ export function App(): JSX.Element {
 }
 
 function AppInner(): JSX.Element {
-  const { theme, cycleTheme } = useTheme();
   const toasts = useToasts();
 
   // Boot into a blank sheet so there is always something to work on.
@@ -52,42 +50,6 @@ function AppInner(): JSX.Element {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <a
-          className="brand"
-          href="https://www.vensas.de"
-          rel="noopener"
-          aria-label="vensas GmbH website"
-        >
-          <img
-            className="logo logo-light"
-            src="vensas_logo_light.svg"
-            alt="vensas GmbH"
-            height={24}
-          />
-          <img
-            className="logo logo-dark"
-            src="vensas_logo_dark.svg"
-            alt="vensas GmbH"
-            height={24}
-          />
-        </a>
-        <h1 className="app-title">PDF Editor</h1>
-        <span className="privacy-badge" title="All processing happens locally in your browser">
-          <Icon name="lock" size={13} />
-          100% local
-        </span>
-        <button
-          type="button"
-          className="theme-toggle"
-          title="Switch between automatic, light, and dark theme"
-          onClick={cycleTheme}
-        >
-          <Icon name="theme" size={15} />
-          {THEME_LABELS[theme]}
-        </button>
-      </header>
-
       <main className="app-main">
         <Workspace />
       </main>

@@ -1,10 +1,9 @@
 /**
  * Command toolbar: file actions, undo/redo, annotation tools, page
- * operations, and exports. Buttons expose full labels to screen readers and
- * disable themselves when their preconditions aren't met.
+ * operations, and exports.
  */
 
-import { useRef, type JSX } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import {
   selectActiveDocument,
   selectCanRedo,
@@ -13,7 +12,7 @@ import {
 } from '../../editor-state/store';
 import type { Tool } from '../../editor-state/types';
 import { addBlankPage } from '../../services/new-document';
-import { openFiles } from '../../services/open-files';
+import { openFiles, reopenRecent } from '../../services/open-files';
 import { placeImageFromFile } from '../../services/place-image';
 import {
   exportDocument,
@@ -23,8 +22,14 @@ import {
 } from '../../services/export-service';
 import { useToasts } from '../toast/Toasts';
 import { useActiveDoc } from '../hooks/useActiveDoc';
+import { THEME_LABELS, useTheme } from '../hooks/useTheme';
 import { Icon, type IconName } from '../icons';
-import { RecentsMenu } from './RecentsMenu';
+import {
+  disconnectGoogleAccount,
+  hasGoogleAuth,
+  requestGoogleAccessToken,
+} from '../../services/google-drive';
+import { openPdfFromGoogleDrive } from '../../services/google-picker';
 
 export interface ToolbarProps {
   onSplit(): void;
@@ -55,12 +60,18 @@ export function Toolbar({
   onClear,
   onShortcuts,
 }: ToolbarProps): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [openMenuOpen, setOpenMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const openFileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const toasts = useToasts();
+  const { theme, cycleTheme } = useTheme();
 
   const tool = useEditorStore((state) => state.tool);
   const setTool = useEditorStore((state) => state.setTool);
+  const recents = useEditorStore((state) => state.recents);
+  const removeRecent = useEditorStore((state) => state.removeRecent);
   const selectionCount = useActiveDoc((docState) => docState.selection.length) ?? 0;
   const pageCount = useActiveDoc((docState) => docState.doc.pages.length) ?? 0;
   const busy = useEditorStore((state) => state.busy);
@@ -85,43 +96,116 @@ export function Toolbar({
       );
   };
 
+  const handleOpenFromComputer = () => {
+    setOpenMenuOpen(false);
+    openFileInputRef.current?.click();
+  };
+
+  const handleOpenFromGoogleDrive = async () => {
+    setOpenMenuOpen(false);
+    try {
+      const outcome = await openPdfFromGoogleDrive();
+      if (!outcome) return;
+      for (const failure of outcome.openResult.errors) {
+        toasts.push('error', `${failure.name}: ${failure.message}`);
+      }
+      if (outcome.openResult.openedFiles > 0) {
+        toasts.push('success', `Documento "${outcome.file.name}" aberto com sucesso.`);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Erro ao abrir arquivo do Google Drive.';
+      toasts.push('error', msg);
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    setOpenMenuOpen(false);
+    try {
+      await requestGoogleAccessToken();
+      toasts.push('success', 'Conta Google autorizada com sucesso.');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Falha na autorização do Google.';
+      toasts.push('error', msg);
+    }
+  };
+
   return (
     <div className="toolbar" role="toolbar" aria-label="Editor commands">
-      <div className="toolbar-group" aria-label="File">
-        <button
-          type="button"
-          className="tool-button"
-          title="Merge a PDF's pages into this document (drop files anywhere to open them as their own tabs)"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Icon name="filePlus" />
-          <span>Merge PDF</span>
-        </button>
-        <button
-          type="button"
-          className="tool-button"
-          title="Insert an empty A4 page after the current page"
-          onClick={() => {
-            const docState = selectActiveDocument(useEditorStore.getState());
-            const activeIndex =
-              docState?.doc.pages.findIndex((page) => page.id === docState.activePageId) ?? -1;
-            run(
-              () => addBlankPage(activeIndex >= 0 ? { insertAt: activeIndex + 1 } : undefined),
-              'Blank page added.',
-            );
-          }}
-        >
-          <Icon name="blankPage" />
-          <span>Blank page</span>
-        </button>
-        <button type="button" className="tool-button" onClick={onInsert} disabled={pageCount === 0}>
-          <Icon name="split" />
-          <span>Insert…</span>
-        </button>
-        <RecentsMenu />
-      </div>
+      {/* Main visible actions: Open PDF, Undo, Redo, Print, Configure PDF */}
+      <div className="toolbar-group" aria-label="Main commands">
+        {/* Open PDF button with dropdown */}
+        <div className="menu-anchor">
+          <button
+            type="button"
+            className={`icon-button ${openMenuOpen ? 'is-on' : ''}`}
+            aria-label="Abrir PDF"
+            title="Abrir PDF"
+            aria-haspopup="menu"
+            aria-expanded={openMenuOpen}
+            onClick={() => setOpenMenuOpen((current) => !current)}
+          >
+            <Icon name="fileOpen" />
+          </button>
 
-      <div className="toolbar-group" aria-label="History">
+          {openMenuOpen && (
+            <>
+              <button
+                type="button"
+                className="menu-backdrop"
+                aria-label="Fechar menu"
+                tabIndex={-1}
+                onClick={() => setOpenMenuOpen(false)}
+              />
+              <div role="menu" aria-label="Abrir PDF" className="menu-popover" style={{ minWidth: '14rem' }}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="menu-item"
+                  onClick={handleOpenFromComputer}
+                >
+                  <Icon name="computer" size={16} />
+                  <span>Do computador</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="menu-item"
+                  onClick={handleOpenFromGoogleDrive}
+                >
+                  <Icon name="googleDrive" size={16} />
+                  <span>Google Drive</span>
+                </button>
+                <div style={{ height: 1, background: 'var(--border)', margin: '0.2rem 0' }} />
+                {hasGoogleAuth() ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu-item is-danger"
+                    onClick={() => {
+                      setOpenMenuOpen(false);
+                      disconnectGoogleAccount();
+                      toasts.push('success', 'Conta Google desconectada da sessão.');
+                    }}
+                  >
+                    <Icon name="close" size={14} />
+                    <span>Desconectar Google</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu-item"
+                    onClick={handleConnectGoogle}
+                  >
+                    <Icon name="lock" size={14} />
+                    <span>Conectar conta Google</span>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
         <button
           type="button"
           className="icon-button"
@@ -142,168 +226,406 @@ export function Toolbar({
         >
           <Icon name="redo" />
         </button>
-      </div>
-
-      <div className="toolbar-group" role="radiogroup" aria-label="Annotation tools">
-        {TOOLS.map((entry) => (
-          <button
-            key={entry.tool}
-            type="button"
-            className={`icon-button ${tool === entry.tool ? 'is-on' : ''}`}
-            role="radio"
-            aria-checked={tool === entry.tool}
-            aria-label={`${entry.label} tool`}
-            title={`${entry.label} (${entry.key})`}
-            onClick={() => setTool(entry.tool)}
-          >
-            <Icon name={entry.icon} />
-          </button>
-        ))}
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Place image or stamp"
-          title="Place image or stamp"
-          onClick={() => imageInputRef.current?.click()}
-        >
-          <Icon name="image" />
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Add signature"
-          title="Add signature"
-          onClick={onSignature}
-        >
-          <Icon name="signature" />
-        </button>
-      </div>
-
-      <div className="toolbar-group" aria-label="Page operations">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Rotate left"
-          title="Rotate left ([)"
-          disabled={!hasSelectionOrActive}
-          onClick={() => rotateSelectedPages(-90)}
-        >
-          <Icon name="rotateLeft" />
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Rotate right"
-          title="Rotate right (])"
-          disabled={!hasSelectionOrActive}
-          onClick={() => rotateSelectedPages(90)}
-        >
-          <Icon name="rotateRight" />
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Duplicate selected pages"
-          title="Duplicate pages (Ctrl/⌘+D)"
-          disabled={selectionCount === 0}
-          onClick={() => {
-            const docState = selectActiveDocument(useEditorStore.getState());
-            if (docState) duplicatePages(docState.selection);
-          }}
-        >
-          <Icon name="duplicate" />
-        </button>
-        <button
-          type="button"
-          className="icon-button is-danger"
-          aria-label="Delete selected pages"
-          title={
-            selectionCount > 0 && !deletable ? 'Cannot delete every page' : 'Delete pages (Del)'
-          }
-          disabled={!deletable}
-          onClick={() => {
-            const docState = selectActiveDocument(useEditorStore.getState());
-            if (docState) deletePages(docState.selection);
-          }}
-        >
-          <Icon name="trash" />
-        </button>
-      </div>
-
-      <div className="toolbar-group" aria-label="Export">
-        <button
-          type="button"
-          className="tool-button"
-          title="Split by page ranges into new document tabs"
-          onClick={onSplit}
-          disabled={pageCount === 0 || exporting}
-        >
-          <Icon name="split" />
-          <span>Split…</span>
-        </button>
-        <button
-          type="button"
-          className="tool-button"
-          disabled={pageCount === 0 || exporting}
-          title="Every page of this document as its own PDF, packed into a ZIP"
-          onClick={() => run(exportPagesAsZip, 'ZIP download started.')}
-        >
-          <Icon name="zip" />
-          <span>ZIP</span>
-        </button>
-        <button
-          type="button"
-          className="tool-button"
-          disabled={selectionCount === 0 || exporting}
-          title="Download only the selected pages as one PDF"
-          onClick={() => run(exportSelection, 'PDF download started.')}
-        >
-          <Icon name="scissors" />
-          <span>Export selection{selectionCount > 0 ? ` (${selectionCount})` : ''}</span>
-        </button>
         <button
           type="button"
           className="icon-button"
           aria-label="Print document"
-          title="Print the edited document (Ctrl/⌘+P)"
+          title="Print document (Ctrl/⌘+P)"
           disabled={pageCount === 0 || exporting}
           onClick={() => run(printDocument)}
         >
           <Icon name="printer" />
         </button>
+
+        {/* Configure PDF button (page with gear icon, no text) */}
+        <div className="menu-anchor">
+          <button
+            type="button"
+            className={`icon-button ${menuOpen ? 'is-on' : ''}`}
+            aria-label="PDF Tools & Settings"
+            title="PDF Tools & Settings"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((current) => !current)}
+          >
+            <Icon name="pageGear" />
+          </button>
+
+          {menuOpen && (
+            <>
+              <button
+                type="button"
+                className="menu-backdrop"
+                aria-label="Close menu"
+                tabIndex={-1}
+                onClick={() => setMenuOpen(false)}
+              />
+              <div role="menu" aria-label="PDF Tools" className="pdf-tools-popover">
+                {/* SECTION 1: Annotation & Drawing */}
+                <div className="pdf-tools-section">
+                  <div className="pdf-tools-section-title">Annotation & Drawing</div>
+                  <div className="pdf-tools-grid">
+                    {TOOLS.map((entry) => (
+                      <button
+                        key={entry.tool}
+                        type="button"
+                        role="menuitem"
+                        className={`pdf-tool-item ${tool === entry.tool ? 'is-active' : ''}`}
+                        title={`${entry.label} (${entry.key})`}
+                        onClick={() => {
+                          setTool(entry.tool);
+                          setMenuOpen(false);
+                        }}
+                      >
+                        <Icon name={entry.icon} size={16} />
+                        <span className="pdf-tool-name">{entry.label}</span>
+                        <kbd className="pdf-tool-key">{entry.key}</kbd>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      title="Place image or stamp"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        imageInputRef.current?.click();
+                      }}
+                    >
+                      <Icon name="image" size={16} />
+                      <span className="pdf-tool-name">Place image</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      title="Add signature"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onSignature();
+                      }}
+                    >
+                      <Icon name="signature" size={16} />
+                      <span className="pdf-tool-name">Signature</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION 2: Document & Pages */}
+                <div className="pdf-tools-section">
+                  <div className="pdf-tools-section-title">Document & Pages</div>
+                  <div className="pdf-tools-grid">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      title="Merge a PDF's pages into this document"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      <Icon name="filePlus" size={16} />
+                      <span className="pdf-tool-name">Merge PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      title="Insert an empty A4 page after the current page"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        const docState = selectActiveDocument(useEditorStore.getState());
+                        const activeIndex =
+                          docState?.doc.pages.findIndex((page) => page.id === docState.activePageId) ?? -1;
+                        run(
+                          () => addBlankPage(activeIndex >= 0 ? { insertAt: activeIndex + 1 } : undefined),
+                          'Blank page added.',
+                        );
+                      }}
+                    >
+                      <Icon name="blankPage" size={16} />
+                      <span className="pdf-tool-name">Blank page</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={pageCount === 0}
+                      title="Insert pages from another PDF"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onInsert();
+                      }}
+                    >
+                      <Icon name="split" size={16} />
+                      <span className="pdf-tool-name">Insert…</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={!hasSelectionOrActive}
+                      title="Rotate left ([)"
+                      onClick={() => {
+                        rotateSelectedPages(-90);
+                      }}
+                    >
+                      <Icon name="rotateLeft" size={16} />
+                      <span className="pdf-tool-name">Rotate left</span>
+                      <kbd className="pdf-tool-key">[</kbd>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={!hasSelectionOrActive}
+                      title="Rotate right (])"
+                      onClick={() => {
+                        rotateSelectedPages(90);
+                      }}
+                    >
+                      <Icon name="rotateRight" size={16} />
+                      <span className="pdf-tool-name">Rotate right</span>
+                      <kbd className="pdf-tool-key">]</kbd>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={selectionCount === 0}
+                      title="Duplicate pages (Ctrl/⌘+D)"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        const docState = selectActiveDocument(useEditorStore.getState());
+                        if (docState) duplicatePages(docState.selection);
+                      }}
+                    >
+                      <Icon name="duplicate" size={16} />
+                      <span className="pdf-tool-name">Duplicate</span>
+                      <kbd className="pdf-tool-key">⌘D</kbd>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item is-danger"
+                      disabled={!deletable}
+                      title={
+                        selectionCount > 0 && !deletable
+                          ? 'Cannot delete every page'
+                          : 'Delete pages (Del)'
+                      }
+                      onClick={() => {
+                        setMenuOpen(false);
+                        const docState = selectActiveDocument(useEditorStore.getState());
+                        if (docState) deletePages(docState.selection);
+                      }}
+                    >
+                      <Icon name="trash" size={16} />
+                      <span className="pdf-tool-name">Delete pages</span>
+                      <kbd className="pdf-tool-key">Del</kbd>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION 3: Export */}
+                <div className="pdf-tools-section">
+                  <div className="pdf-tools-section-title">Export</div>
+                  <div className="pdf-tools-grid">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item is-primary"
+                      disabled={pageCount === 0 || exporting}
+                      title="Download the whole edited document — all pages"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        run(exportDocument, 'PDF download started.');
+                      }}
+                    >
+                      <Icon name="download" size={16} />
+                      <span className="pdf-tool-name">Export PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={selectionCount === 0 || exporting}
+                      title="Download only the selected pages as one PDF"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        run(exportSelection, 'PDF download started.');
+                      }}
+                    >
+                      <Icon name="scissors" size={16} />
+                      <span className="pdf-tool-name">
+                        Export selection{selectionCount > 0 ? ` (${selectionCount})` : ''}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={pageCount === 0 || exporting}
+                      title="Split by page ranges into new document tabs"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onSplit();
+                      }}
+                    >
+                      <Icon name="split" size={16} />
+                      <span className="pdf-tool-name">Split…</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      disabled={pageCount === 0 || exporting}
+                      title="Every page of this document as its own PDF, packed into a ZIP"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        run(exportPagesAsZip, 'ZIP download started.');
+                      }}
+                    >
+                      <Icon name="zip" size={16} />
+                      <span className="pdf-tool-name">ZIP</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SECTION 4: Recents (if any) */}
+                {recents.length > 0 && (
+                  <div className="pdf-tools-section">
+                    <div className="pdf-tools-section-title">Recent Documents</div>
+                    {recents.map((recent) => (
+                      <div key={recent.id} className="menu-item-row">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="menu-item"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            void reopenRecent(recent)
+                              .then(() => toasts.push('success', `Reopened ${recent.name}.`))
+                              .catch((error: unknown) =>
+                                toasts.push(
+                                  'error',
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Could not reopen this document.',
+                                ),
+                              );
+                          }}
+                        >
+                          <Icon name="clock" size={15} />
+                          <span className="recent-name">{recent.name}</span>
+                          <span className="muted small">
+                            {recent.pageCount} page{recent.pageCount === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Forget ${recent.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeRecent(recent.id);
+                          }}
+                        >
+                          <Icon name="close" size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* SECTION 5: More / Utilities */}
+                <div className="pdf-tools-section">
+                  <div className="pdf-tools-section-title">More</div>
+                  <div className="pdf-tools-grid">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item"
+                      title="Keyboard shortcuts (?)"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onShortcuts();
+                      }}
+                    >
+                      <Icon name="question" size={16} />
+                      <span className="pdf-tool-name">Shortcuts</span>
+                      <kbd className="pdf-tool-key">?</kbd>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pdf-tool-item is-danger"
+                      title="Close document"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onClear();
+                      }}
+                    >
+                      <Icon name="broom" size={16} />
+                      <span className="pdf-tool-name">Close document</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Extreme Right: Dark/Light Mode Theme Toggle */}
+      <div className="toolbar-group toolbar-end" aria-label="Theme">
         <button
           type="button"
-          className="tool-button is-primary"
-          disabled={pageCount === 0 || exporting}
-          title="Download the whole edited document — all pages, regardless of selection"
-          onClick={() => run(exportDocument, 'PDF download started.')}
+          className="theme-toggle"
+          title={`Switch theme (${THEME_LABELS[theme]})`}
+          aria-label={`Switch theme (${THEME_LABELS[theme]})`}
+          onClick={cycleTheme}
         >
-          <Icon name="download" />
-          <span>Export PDF</span>
+          <Icon name="theme" size={15} />
+          <span>{THEME_LABELS[theme]}</span>
         </button>
       </div>
 
-      <div className="toolbar-group toolbar-end" aria-label="Workspace">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
-          onClick={onShortcuts}
-        >
-          <Icon name="question" />
-        </button>
-        <button
-          type="button"
-          className="icon-button is-danger"
-          aria-label="Close document"
-          title="Close document"
-          onClick={onClear}
-        >
-          <Icon name="broom" />
-        </button>
-      </div>
-
+      <input
+        ref={openFileInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        hidden
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          event.target.value = '';
+          if (files.length === 0) return;
+          run(async () => {
+            const result = await openFiles(files);
+            for (const failure of result.errors) {
+              toasts.push('error', `${failure.name}: ${failure.message}`);
+            }
+            if (result.openedFiles > 0) {
+              toasts.push(
+                'success',
+                `Aberto${result.openedFiles === 1 ? '' : 's'} ${result.openedFiles} documento${result.openedFiles === 1 ? '' : 's'}.`,
+              );
+            }
+          });
+        }}
+      />
       <input
         ref={fileInputRef}
         type="file"

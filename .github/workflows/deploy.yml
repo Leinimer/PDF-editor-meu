@@ -33,6 +33,10 @@ jobs:
       - run: pnpm format:check
       - run: pnpm test:coverage
       - run: pnpm build
+        env:
+          PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.PUBLIC_GOOGLE_CLIENT_ID || secrets.PUBLIC_GOOGLE_CLIENT_ID }}
+          PUBLIC_GOOGLE_API_KEY: ${{ vars.PUBLIC_GOOGLE_API_KEY || secrets.PUBLIC_GOOGLE_API_KEY }}
+          PUBLIC_GOOGLE_APP_ID: ${{ vars.PUBLIC_GOOGLE_APP_ID || secrets.PUBLIC_GOOGLE_APP_ID }}
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -53,6 +57,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+        env:
+          PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.PUBLIC_GOOGLE_CLIENT_ID || secrets.PUBLIC_GOOGLE_CLIENT_ID }}
+          PUBLIC_GOOGLE_API_KEY: ${{ vars.PUBLIC_GOOGLE_API_KEY || secrets.PUBLIC_GOOGLE_API_KEY }}
+          PUBLIC_GOOGLE_APP_ID: ${{ vars.PUBLIC_GOOGLE_APP_ID || secrets.PUBLIC_GOOGLE_APP_ID }}
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

@@ -256,6 +256,117 @@ button:disabled {
   margin: 0.2rem 0.4rem 0.3rem;
 }
 
+/* --- PDF Tools Popover Menu ---------------------------------------------------- */
+
+.pdf-tools-popover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 50;
+  width: 27rem;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 4.5rem);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pdf-tools-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pdf-tools-section + .pdf-tools-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.pdf-tools-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0 0.25rem 0.15rem;
+}
+
+.pdf-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.pdf-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.5rem;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text);
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  min-width: 0;
+}
+
+.pdf-tool-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.pdf-tool-item.is-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.pdf-tool-item.is-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
+.pdf-tool-item.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.pdf-tool-item.is-danger:hover:not(:disabled) {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+.pdf-tool-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pdf-tool-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-tool-key {
+  font-size: 0.68rem;
+  font-family: inherit;
+  font-weight: 500;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* --- Workspace ------------------------------------------------------------------ */
 
 .workspace {

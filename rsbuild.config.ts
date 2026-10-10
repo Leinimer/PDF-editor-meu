@@ -1,15 +1,22 @@
 import { readFileSync } from 'node:fs';
-import { defineConfig } from '@rsbuild/core';
+import { defineConfig, loadEnv } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as {
   version: string;
 };
 
-// Served from https://pdf-editor.apps.vensas.de/ (custom domain at the
-// root). Override with PUBLIC_BASE_PATH=/pdf-editor/ to build for a
-// project-page host like vensas.github.io/pdf-editor/.
-const basePath = process.env['PUBLIC_BASE_PATH'] ?? '/';
+const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
+
+function getValidBasePath(val?: string): string {
+  if (!val || val === '/') return '/';
+  if (val.startsWith('/')) return val;
+  // If val is a domain without leading slash, use '/' for server.base
+  if (val.includes('.') || val.includes(':')) return '/';
+  return `/${val}`;
+}
+
+const basePath = getValidBasePath(process.env['PUBLIC_BASE_PATH']);
 
 export default defineConfig(({ env }) => ({
   plugins: [pluginReact()],
@@ -17,12 +24,15 @@ export default defineConfig(({ env }) => ({
     entry: { index: './src/main.tsx' },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
+      ...publicVars,
     },
   },
   html: {
     template: './src/index.html',
   },
   server: {
+    host: '0.0.0.0',
+    port: 3000,
     base: env === 'production' ? basePath : '/',
   },
   output: {
