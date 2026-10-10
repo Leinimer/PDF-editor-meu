@@ -59,6 +59,13 @@ const PATHS = {
   formatUnderline: 'M6 4v6a6 6 0 0 0 12 0V4M5 20h14',
   formatStrike:
     'M16 6c-.7-1.5-2.2-2.4-4-2.4-2.2 0-4 1.3-4 3s1.5 2.6 4 3.4M8 18c.7 1.5 2.2 2.4 4 2.4 2.2 0 4-1.3 4-3 0-.8-.4-1.5-1-2M4 12h16',
+  panelLeft: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm5 16V4',
+  alignLeft: 'M4 6h16M4 12h10M4 18h14',
+  alignCenter: 'M4 6h16M7 12h10M5 18h14',
+  alignRight: 'M4 6h16M10 12h10M6 18h14',
+  alignJustify: 'M4 6h16M4 12h16M4 18h16',
+  formatClear: 'm6 6 12 12m-8-7 4-7h8m-7 14h6',
+  colorSwatch: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 3a2 2 0 1 1-2 2 2 2 0 0 1 2-2Z',
 } as const;
 
 export type IconName = keyof typeof PATHS;

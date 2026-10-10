@@ -25,9 +25,9 @@ let gsiPromise: Promise<void> | null = null;
  * Returns Google configuration from public environment variables.
  */
 export function getGoogleDriveConfig(): { clientId: string; apiKey: string; appId: string } {
-  const clientId = process.env['PUBLIC_GOOGLE_CLIENT_ID'] ?? '';
-  const apiKey = process.env['PUBLIC_GOOGLE_API_KEY'] ?? '';
-  const appId = process.env['PUBLIC_GOOGLE_APP_ID'] ?? '';
+  const clientId = process.env.PUBLIC_GOOGLE_CLIENT_ID || '';
+  const apiKey = process.env.PUBLIC_GOOGLE_API_KEY || '';
+  const appId = process.env.PUBLIC_GOOGLE_APP_ID || '';
 
   return { clientId, apiKey, appId };
 }

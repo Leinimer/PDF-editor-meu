@@ -26,6 +26,9 @@ export function Workspace(): JSX.Element {
 
   useKeyboardShortcuts({ onShowShortcuts: () => setDialog('shortcuts') });
 
+  const showLeftSidebar = useEditorStore((state) => state.showLeftSidebar);
+  const showRightSidebar = useEditorStore((state) => state.showRightSidebar);
+
   return (
     <div className="workspace">
       <DocumentTabs />
@@ -48,7 +51,9 @@ export function Workspace(): JSX.Element {
           }
         }}
       />
-      <div className="workspace-panes">
+      <div
+        className={`workspace-panes ${!showLeftSidebar ? 'hide-left-sidebar' : ''} ${!showRightSidebar ? 'hide-right-sidebar' : ''}`}
+      >
         <Sidebar />
         <CanvasView />
         <PropertiesPanel />

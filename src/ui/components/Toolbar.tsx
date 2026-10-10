@@ -129,8 +129,107 @@ export function Toolbar({
     }
   };
 
+  const showLeftSidebar = useEditorStore((state) => state.showLeftSidebar);
+  const toggleLeftSidebar = useEditorStore((state) => state.toggleLeftSidebar);
+  const showRightSidebar = useEditorStore((state) => state.showRightSidebar);
+  const setShowRightSidebar = useEditorStore((state) => state.setShowRightSidebar);
+
+  const activeAnnotation = useActiveDoc((docState) =>
+    docState.activeAnnotationId ? docState.doc.annotations[docState.activeAnnotationId] : undefined,
+  );
+  const updateAnnotation = useEditorStore((state) => state.updateAnnotation);
+
+  const textColorInputRef = useRef<HTMLInputElement>(null);
+  const highlightColorInputRef = useRef<HTMLInputElement>(null);
+
+  // Formatting state for active text/rich-text/text-edit or default values
+  const isTextAnnotation =
+    activeAnnotation &&
+    (activeAnnotation.kind === 'text' ||
+      activeAnnotation.kind === 'rich-text' ||
+      activeAnnotation.kind === 'text-edit');
+
+  const currentFontSize =
+    isTextAnnotation && 'fontSize' in activeAnnotation ? activeAnnotation.fontSize : 16;
+  const currentTextColor =
+    isTextAnnotation && 'color' in activeAnnotation ? activeAnnotation.color : '#1a2030';
+
+  // Rich text span mark checking if activeAnnotation is rich-text
+  const isBold =
+    activeAnnotation?.kind === 'rich-text'
+      ? activeAnnotation.blocks.some((b) => b.spans.some((s) => s.bold))
+      : false;
+  const isItalic =
+    activeAnnotation?.kind === 'rich-text'
+      ? activeAnnotation.blocks.some((b) => b.spans.some((s) => s.italic))
+      : false;
+  const isUnderline =
+    activeAnnotation?.kind === 'rich-text'
+      ? activeAnnotation.blocks.some((b) => b.spans.some((s) => s.underline))
+      : false;
+  const isStrike =
+    activeAnnotation?.kind === 'rich-text'
+      ? activeAnnotation.blocks.some((b) => b.spans.some((s) => s.strike))
+      : false;
+
+  const toggleRichTextMark = (mark: 'bold' | 'italic' | 'underline' | 'strike') => {
+    if (!activeAnnotation || activeAnnotation.kind !== 'rich-text') return;
+    const currentlyActive = activeAnnotation.blocks.some((b) => b.spans.some((s) => s[mark]));
+    const newBlocks = activeAnnotation.blocks.map((b) => ({
+      spans: b.spans.map((s) => ({
+        ...s,
+        [mark]: !currentlyActive ? true : undefined,
+      })),
+    }));
+    updateAnnotation(activeAnnotation.id, { blocks: newBlocks });
+  };
+
+  const clearFormatting = () => {
+    if (!activeAnnotation || activeAnnotation.kind !== 'rich-text') return;
+    const newBlocks = activeAnnotation.blocks.map((b) => ({
+      spans: b.spans.map((s) => ({
+        text: s.text,
+      })),
+    }));
+    updateAnnotation(activeAnnotation.id, { blocks: newBlocks });
+  };
+
+  const changeFontSize = (delta: number) => {
+    if (!activeAnnotation || !('fontSize' in activeAnnotation)) return;
+    const newSize = Math.min(Math.max((activeAnnotation.fontSize || 16) + delta, 6), 96);
+    updateAnnotation(activeAnnotation.id, { fontSize: newSize });
+  };
+
+  const setParagraphStyle = (style: string) => {
+    if (!activeAnnotation || !('fontSize' in activeAnnotation)) return;
+    let newSize = 16;
+    if (style === 'h1') newSize = 28;
+    else if (style === 'h2') newSize = 22;
+    else if (style === 'h3') newSize = 18;
+    else if (style === 'body') newSize = 16;
+    else if (style === 'caption') newSize = 12;
+    updateAnnotation(activeAnnotation.id, { fontSize: newSize });
+  };
+
+  const setTextColor = (color: string) => {
+    if (activeAnnotation && 'color' in activeAnnotation) {
+      updateAnnotation(activeAnnotation.id, { color });
+    }
+  };
+
   return (
     <div className="toolbar" role="toolbar" aria-label="Editor commands">
+      {/* 1. Toggle Sidebar Esquerda (extremo esquerdo) */}
+      <button
+        type="button"
+        className={`icon-button ${showLeftSidebar ? 'is-on' : ''}`}
+        aria-label={showLeftSidebar ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
+        title={showLeftSidebar ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
+        onClick={toggleLeftSidebar}
+      >
+        <Icon name="panelLeft" />
+      </button>
+
       {/* Main visible actions: Open PDF, Undo, Redo, Print, Configure PDF */}
       <div className="toolbar-group" aria-label="Main commands">
         {/* Open PDF button with dropdown */}
@@ -548,6 +647,31 @@ export function Toolbar({
                   </div>
                 )}
 
+                {/* SECTION 4.5: Panels & View Settings */}
+                <div className="pdf-tools-section">
+                  <div className="pdf-tools-section-title">Painéis & Exibição</div>
+                  <div style={{ padding: '0.3rem 0.5rem' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.55rem',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={showRightSidebar}
+                        onChange={(e) => setShowRightSidebar(e.target.checked)}
+                        style={{ cursor: 'pointer', width: '1rem', height: '1rem' }}
+                      />
+                      <span>Mostrar painel de informações</span>
+                    </label>
+                  </div>
+                </div>
+
                 {/* SECTION 5: More / Utilities */}
                 <div className="pdf-tools-section">
                   <div className="pdf-tools-section-title">More</div>
@@ -586,6 +710,210 @@ export function Toolbar({
             </>
           )}
         </div>
+      </div>
+
+      {/* 3. Text Formatting Controls (Image order 1-13) */}
+      <div className="toolbar-group" aria-label="Formatação de texto">
+        {/* 1. Negrito */}
+        <button
+          type="button"
+          className={`icon-button ${isBold ? 'is-on' : ''}`}
+          aria-label="Negrito"
+          title="Negrito (Ctrl+B)"
+          disabled={!activeAnnotation || activeAnnotation.kind !== 'rich-text'}
+          onClick={() => toggleRichTextMark('bold')}
+        >
+          <Icon name="formatBold" />
+        </button>
+
+        {/* 2. Itálico */}
+        <button
+          type="button"
+          className={`icon-button ${isItalic ? 'is-on' : ''}`}
+          aria-label="Itálico"
+          title="Itálico (Ctrl+I)"
+          disabled={!activeAnnotation || activeAnnotation.kind !== 'rich-text'}
+          onClick={() => toggleRichTextMark('italic')}
+        >
+          <Icon name="formatItalic" />
+        </button>
+
+        {/* 3. Sublinhado */}
+        <button
+          type="button"
+          className={`icon-button ${isUnderline ? 'is-on' : ''}`}
+          aria-label="Sublinhado"
+          title="Sublinhado (Ctrl+U)"
+          disabled={!activeAnnotation || activeAnnotation.kind !== 'rich-text'}
+          onClick={() => toggleRichTextMark('underline')}
+        >
+          <Icon name="formatUnderline" />
+        </button>
+
+        {/* 4. Tachado */}
+        <button
+          type="button"
+          className={`icon-button ${isStrike ? 'is-on' : ''}`}
+          aria-label="Tachado"
+          title="Tachado"
+          disabled={!activeAnnotation || activeAnnotation.kind !== 'rich-text'}
+          onClick={() => toggleRichTextMark('strike')}
+        >
+          <Icon name="formatStrike" />
+        </button>
+
+        {/* 5. Estilo de parágrafo com padrão 'Corpo' */}
+        <select
+          className="toolbar-select"
+          aria-label="Estilo de parágrafo"
+          title="Estilo de parágrafo"
+          disabled={!activeAnnotation || !('fontSize' in activeAnnotation)}
+          value={
+            currentFontSize >= 26
+              ? 'h1'
+              : currentFontSize >= 21
+                ? 'h2'
+                : currentFontSize >= 18
+                  ? 'h3'
+                  : currentFontSize <= 13
+                    ? 'caption'
+                    : 'body'
+          }
+          onChange={(e) => setParagraphStyle(e.target.value)}
+        >
+          <option value="body">Corpo</option>
+          <option value="h1">Título 1</option>
+          <option value="h2">Título 2</option>
+          <option value="h3">Título 3</option>
+          <option value="caption">Legenda</option>
+        </select>
+
+        {/* 6. Diminuir tamanho da fonte */}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Diminuir tamanho da fonte"
+          title="Diminuir tamanho da fonte"
+          disabled={!activeAnnotation || !('fontSize' in activeAnnotation) || currentFontSize <= 6}
+          onClick={() => changeFontSize(-2)}
+        >
+          <Icon name="minus" />
+        </button>
+
+        {/* 7. Aumentar tamanho da fonte */}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Aumentar tamanho da fonte"
+          title="Aumentar tamanho da fonte"
+          disabled={!activeAnnotation || !('fontSize' in activeAnnotation) || currentFontSize >= 96}
+          onClick={() => changeFontSize(2)}
+        >
+          <Icon name="plus" />
+        </button>
+
+        {/* 8. Cor do texto com seletor */}
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            className="toolbar-color-btn"
+            aria-label="Cor do texto"
+            title="Cor do texto"
+            disabled={!activeAnnotation || !('color' in activeAnnotation)}
+            onClick={() => textColorInputRef.current?.click()}
+          >
+            <span style={{ fontWeight: 'bold', fontSize: '1rem', lineHeight: '1rem' }}>A</span>
+            <span
+              className="toolbar-color-indicator"
+              style={{ background: currentTextColor || '#1a2030' }}
+            />
+          </button>
+          <input
+            ref={textColorInputRef}
+            type="color"
+            className="toolbar-color-input-hidden"
+            value={currentTextColor || '#1a2030'}
+            onChange={(e) => setTextColor(e.target.value)}
+          />
+        </div>
+
+        {/* 9. Marca-texto com seletor */}
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            className={`toolbar-color-btn ${tool === 'highlight' ? 'is-on' : ''}`}
+            aria-label="Marca-texto"
+            title="Marca-texto"
+            onClick={() => {
+              setTool('highlight');
+              highlightColorInputRef.current?.click();
+            }}
+          >
+            <Icon name="highlighter" size={15} />
+            <span
+              className="toolbar-color-indicator"
+              style={{
+                background:
+                  activeAnnotation?.kind === 'highlight'
+                    ? activeAnnotation.color
+                    : '#ffd43b',
+              }}
+            />
+          </button>
+          <input
+            ref={highlightColorInputRef}
+            type="color"
+            className="toolbar-color-input-hidden"
+            defaultValue="#ffd43b"
+            onChange={(e) => {
+              if (activeAnnotation?.kind === 'highlight') {
+                updateAnnotation(activeAnnotation.id, { color: e.target.value });
+              }
+            }}
+          />
+        </div>
+
+        {/* 10. Alinhar à esquerda */}
+        <button
+          type="button"
+          className="icon-button is-on"
+          aria-label="Alinhar à esquerda"
+          title="Alinhar à esquerda"
+        >
+          <Icon name="alignLeft" />
+        </button>
+
+        {/* 11. Centralizar */}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Centralizar"
+          title="Centralizar"
+        >
+          <Icon name="alignCenter" />
+        </button>
+
+        {/* 12. Alinhar à direita */}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Alinhar à direita"
+          title="Alinhar à direita"
+        >
+          <Icon name="alignRight" />
+        </button>
+
+        {/* 13. Limpar formatação */}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Limpar formatação"
+          title="Limpar formatação"
+          disabled={!activeAnnotation || activeAnnotation.kind !== 'rich-text'}
+          onClick={clearFormatting}
+        >
+          <Icon name="formatClear" />
+        </button>
       </div>
 
       {/* Extreme Right: Dark/Light Mode Theme Toggle */}

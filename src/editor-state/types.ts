@@ -99,4 +99,6 @@ export interface EditorSnapshot {
   tool: Tool;
   recents: RecentDoc[];
   busy: BusyState | null;
+  showLeftSidebar: boolean;
+  showRightSidebar: boolean;
 }

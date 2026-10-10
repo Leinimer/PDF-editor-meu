@@ -58,6 +58,9 @@ export interface EditorActions {
 
   setTool(tool: Tool): void;
   setBusy(busy: BusyState | null): void;
+  toggleLeftSidebar(): void;
+  toggleRightSidebar(): void;
+  setShowRightSidebar(show: boolean): void;
 
   selectOnly(id: PageId): void;
   toggleSelect(id: PageId): void;
@@ -98,6 +101,8 @@ export const initialSnapshot: EditorSnapshot = {
   tool: 'select',
   recents: [],
   busy: null,
+  showLeftSidebar: true,
+  showRightSidebar: true,
 };
 
 export function emptyDocumentState(id: DocumentId, name: string): DocumentState {
@@ -308,6 +313,18 @@ export const useEditorStore = create<EditorStore>()((set, get) => {
 
     setBusy(busy) {
       set({ busy });
+    },
+
+    toggleLeftSidebar() {
+      set((state) => ({ showLeftSidebar: !state.showLeftSidebar }));
+    },
+
+    toggleRightSidebar() {
+      set((state) => ({ showRightSidebar: !state.showRightSidebar }));
+    },
+
+    setShowRightSidebar(show) {
+      set({ showRightSidebar: show });
     },
 
     selectOnly(id) {
