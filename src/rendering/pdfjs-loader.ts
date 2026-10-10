@@ -51,6 +51,12 @@ export interface LoadedPdfDocument {
    */
   getTextRuns(pageIndex: number, rotation: Rotation): Promise<TextRun[]>;
   renderPage(pageIndex: number, target: RenderTarget): Promise<void>;
+  renderTextLayer(
+    pageIndex: number,
+    container: HTMLElement,
+    cssWidth: number,
+    rotation: Rotation,
+  ): Promise<void>;
   destroy(): Promise<void>;
 }
 
@@ -145,6 +151,27 @@ export async function loadPdfDocument(bytes: Uint8Array): Promise<LoadedPdfDocum
           // cleanup() can refuse while another render of this page runs.
         }
       }
+    },
+
+    async renderTextLayer(pageIndex, container, cssWidth, rotation): Promise<void> {
+      const page = await doc.getPage(pageIndex + 1);
+      const totalRotation = normalizeRotation(page.rotate + rotation);
+      const base = page.getViewport({ scale: 1, rotation: totalRotation });
+      const scale = cssWidth / base.width;
+      const viewport = page.getViewport({ scale, rotation: totalRotation });
+
+      container.innerHTML = '';
+      container.style.width = `${Math.round(viewport.width)}px`;
+      container.style.height = `${Math.round(viewport.height)}px`;
+
+      const textContentSource = await page.getTextContent();
+      const textLayer = new pdfjs.TextLayer({
+        textContentSource,
+        container,
+        viewport,
+      });
+
+      await textLayer.render();
     },
 
     async destroy(): Promise<void> {

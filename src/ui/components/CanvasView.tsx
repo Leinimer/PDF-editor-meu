@@ -11,7 +11,7 @@ import { PageView } from './PageView';
 import { Icon } from '../icons';
 
 const ZOOM_LEVELS = [0.25, 0.35, 0.5, 0.65, 0.8, 1, 1.25, 1.5, 2, 3, 4];
-const VIEW_PADDING = 64;
+const VIEW_PADDING = 24;
 const NO_PAGES: never[] = [];
 
 export function CanvasView(): JSX.Element {

@@ -223,9 +223,16 @@ export function AnnotationLayer({
         setActiveAnnotation(null);
         return;
       }
-      // These tools act via pickers/hotspots, not by drawing on the page:
-      // image (toolbar picker), edit-text and remove-object (hotspots).
-      if (tool === 'image' || tool === 'edit-text' || tool === 'remove-object') return;
+      // These tools act via pickers/hotspots or text selection, not by SVG drag:
+      // image (toolbar picker), edit-text, remove-object, and highlight (selection-based).
+      if (
+        tool === 'image' ||
+        tool === 'edit-text' ||
+        tool === 'remove-object' ||
+        tool === 'highlight'
+      ) {
+        return;
+      }
       const point = toDisplay(event);
 
       if (tool === 'text' || tool === 'richtext') {
@@ -445,7 +452,7 @@ export function AnnotationLayer({
           </g>
         ))}
 
-        {tool === 'edit-text' && (
+        {(tool === 'edit-text' || tool === 'text') && (
           <TextRunHotspots
             key={`text:${page.id}:${page.rotation}`}
             page={page}

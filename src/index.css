@@ -380,17 +380,17 @@ button:disabled {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 15rem minmax(0, 1fr) 16rem;
+  grid-template-columns: 13rem minmax(0, 1fr) 13.5rem;
   transition: grid-template-columns 0.15s ease;
   overflow: hidden;
 }
 
 .workspace-panes.hide-left-sidebar {
-  grid-template-columns: minmax(0, 1fr) 16rem;
+  grid-template-columns: minmax(0, 1fr) 13.5rem;
 }
 
 .workspace-panes.hide-right-sidebar {
-  grid-template-columns: 15rem minmax(0, 1fr);
+  grid-template-columns: 13rem minmax(0, 1fr);
 }
 
 .workspace-panes.hide-left-sidebar.hide-right-sidebar {
@@ -884,15 +884,84 @@ button:disabled {
   display: block;
 }
 
+/* --- PDF.js Text Layer ----------------------------------------------------------- */
 
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer .highlight {
+  margin: -1px;
+  padding: 1px;
+  background-color: rgba(180, 0, 170, 0.25);
+  border-radius: 4px;
+}
+
+.textLayer ::selection {
+  background: rgba(0, 102, 255, 0.35);
+  color: transparent;
+}
+
+/* Tool cursor indicators on text layer */
+.page-stage[data-tool='highlight'] .textLayer :is(span, br),
+.page-stage[data-tool='highlight'] .textLayer {
+  cursor: text;
+}
+
+.page-stage[data-tool='edit-text'] .textLayer :is(span, br),
+.page-stage[data-tool='edit-text'] .textLayer {
+  cursor: text;
+}
+
+/* Annotation layer above text layer */
 .annotation-layer {
   position: absolute;
   inset: 0;
+  z-index: 3;
+  pointer-events: none;
 }
 
 .annotation-layer svg {
   display: block;
   touch-action: none;
+  pointer-events: none;
+}
+
+/* Enable pointer events on drawing/editing tools and on interactive annotation elements */
+.annotation-layer[data-tool='ink'] svg,
+.annotation-layer[data-tool='rectangle'] svg,
+.annotation-layer[data-tool='ellipse'] svg,
+.annotation-layer[data-tool='line'] svg,
+.annotation-layer[data-tool='arrow'] svg,
+.annotation-layer[data-tool='remove-object'] svg {
+  pointer-events: auto;
+}
+
+.annotation-layer .annotation,
+.annotation-layer .selection-outline,
+.annotation-layer .text-annotation-editor,
+.annotation-layer .rich-text-editor,
+.annotation-layer .object-hotspots,
+.annotation-layer .text-run-hotspots {
+  pointer-events: auto;
 }
 
 .annotation-layer[data-tool='select'] svg {
@@ -901,6 +970,7 @@ button:disabled {
 
 .annotation-layer[data-tool='text'] svg {
   cursor: text;
+  pointer-events: auto;
 }
 
 .annotation-layer:not([data-tool='select']):not([data-tool='text']) svg {

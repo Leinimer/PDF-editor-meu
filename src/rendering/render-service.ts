@@ -107,6 +107,21 @@ class RenderService {
     });
   }
 
+  /**
+   * Renders the text layer for the page into the given container.
+   */
+  async renderTextLayer(
+    sourceId: SourceId,
+    pageIndex: number,
+    container: HTMLElement,
+    cssWidth: number,
+    rotation: Rotation,
+  ): Promise<void> {
+    const doc = this.documents.get(sourceId);
+    if (!doc) return;
+    await doc.renderTextLayer(pageIndex, container, cssWidth, rotation);
+  }
+
   /** Releases the pdf.js resources of one source. */
   release(sourceId: SourceId): void {
     this.documents
