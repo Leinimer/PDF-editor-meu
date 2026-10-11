@@ -28,6 +28,7 @@ export function Workspace(): JSX.Element {
 
   const showLeftSidebar = useEditorStore((state) => state.showLeftSidebar);
   const showRightSidebar = useEditorStore((state) => state.showRightSidebar);
+  const activeDocumentId = useEditorStore((state) => state.activeDocumentId);
 
   return (
     <div className="workspace">
@@ -55,7 +56,7 @@ export function Workspace(): JSX.Element {
         className={`workspace-panes ${!showLeftSidebar ? 'hide-left-sidebar' : ''} ${!showRightSidebar ? 'hide-right-sidebar' : ''}`}
       >
         {showLeftSidebar && <Sidebar />}
-        <CanvasView />
+        <CanvasView key={activeDocumentId ?? 'no-active-document'} />
         {showRightSidebar && <PropertiesPanel />}
       </div>
 
