@@ -11,7 +11,6 @@ import { PageView } from './PageView';
 import { Icon } from '../icons';
 
 const ZOOM_LEVELS = [0.25, 0.35, 0.5, 0.65, 0.8, 1, 1.25, 1.5, 2, 3, 4];
-const VIEW_PADDING = 24;
 const NO_PAGES: never[] = [];
 
 export function CanvasView(): JSX.Element {
@@ -26,48 +25,71 @@ export function CanvasView(): JSX.Element {
   const setActivePage = useEditorStore((state) => state.setActivePage);
   const sources = useEditorStore((state) => state.sources);
 
+  const activeDoc = useActiveDoc((docState) => docState);
+  const activeDocId = activeDoc?.id;
+
   // Active page calculation
   const activeIndex = pages.findIndex((p) => p.id === activePageId);
   const currentDisplayIndex = activeIndex >= 0 ? activeIndex : 0;
 
-  // Max page width to compute fit-to-view zoom accurately
+  // Reset zoom to auto-fit whenever a new document is opened
+  useEffect(() => {
+    setZoomSetting('fit');
+  }, [activeDocId]);
+
+  // Max page width in display points to compute 90% fit-to-width accurately
   const maxPageDimensions = useMemo(() => {
-    let maxWidth = 595;
-    let maxHeight = 842;
+    let maxWidth = 0;
+    let maxHeight = 0;
     for (const page of pages) {
       const info = sources[page.sourceId]?.pageInfos[page.sourceIndex];
       const display = computeDisplayInfo(info, page.rotation);
       if (display.width > maxWidth) maxWidth = display.width;
       if (display.height > maxHeight) maxHeight = display.height;
     }
-    return { width: maxWidth, height: maxHeight };
+    return { width: maxWidth > 0 ? maxWidth : 595, height: maxHeight > 0 ? maxHeight : 842 };
   }, [pages, sources]);
 
-  // Responsive ResizeObserver for canvas-scroll container
+  // Responsive ResizeObserver for canvas-scroll container (reacts to window resize and sidebar toggles)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    const updateSize = () => {
+      const width = container.clientWidth || container.getBoundingClientRect().width;
+      const height = container.clientHeight || container.getBoundingClientRect().height;
+      if (width > 0) {
+        setViewSize({ width, height });
+      }
+    };
+
+    updateSize();
+
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
-      setViewSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+      const width = container.clientWidth || entry.contentRect.width;
+      const height = container.clientHeight || entry.contentRect.height;
+      if (width > 0) {
+        setViewSize({ width, height });
+      }
     });
+
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
-  // Compute zoom
+  // Compute zoom: fit mode makes the page width occupy approximately 90% of available viewer width
+  // without restricting by page height, enabling continuous vertical scrolling.
   const zoom = useMemo(() => {
-    if (pages.length === 0) return 1;
+    if (pages.length === 0 || maxPageDimensions.width <= 0) return 1;
     if (zoomSetting === 'fit') {
-      const scale = Math.min(
-        (viewSize.width - VIEW_PADDING) / maxPageDimensions.width,
-        (viewSize.height - VIEW_PADDING) / maxPageDimensions.height,
-      );
-      return Math.min(Math.max(scale, 0.1), 2.5);
+      const targetWidth = viewSize.width * 0.90;
+      const scale = targetWidth / maxPageDimensions.width;
+      return Math.min(Math.max(scale, 0.1), 5.0);
     }
     return zoomSetting;
-  }, [maxPageDimensions, zoomSetting, viewSize, pages.length]);
+  }, [maxPageDimensions.width, zoomSetting, viewSize.width, pages.length]);
 
   // Zoom helpers
   const zoomBy = useCallback(
@@ -257,8 +279,8 @@ export function CanvasView(): JSX.Element {
           <button
             type="button"
             className={`icon-button ${zoomSetting === 'fit' ? 'is-on' : ''}`}
-            aria-label="Ajustar à tela"
-            title="Ajustar à tela"
+            aria-label="Ajustar à largura"
+            title="Ajustar à largura"
             aria-pressed={zoomSetting === 'fit'}
             onClick={() => setZoomSetting('fit')}
           >

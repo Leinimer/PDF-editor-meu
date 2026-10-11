@@ -886,18 +886,36 @@ button:disabled {
 
 /* --- PDF.js Text Layer ----------------------------------------------------------- */
 
+/* --- PDF.js Text Layer ----------------------------------------------------------- */
+
 .textLayer {
+  color-scheme: only light;
   position: absolute;
-  inset: 0;
-  overflow: hidden;
+  text-align: initial;
+  top: 0;
+  left: 0;
+  overflow: clip;
   opacity: 1;
   line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;
+  caret-color: CanvasText;
   z-index: 2;
   user-select: text;
   -webkit-user-select: text;
+
+  --user-unit: 1;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --total-scale-factor: calc(var(--scale-factor, 1) * var(--user-unit, 1));
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
 .textLayer :is(span, br) {
@@ -906,6 +924,40 @@ button:disabled {
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent),
+.textLayer span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role='img'] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Rotation alignment for PDF.js text layer */
+.textLayer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.textLayer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.textLayer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
 }
 
 .textLayer .highlight {
@@ -917,6 +969,12 @@ button:disabled {
 
 .textLayer ::selection {
   background: rgba(0, 102, 255, 0.35);
+  color: transparent;
+}
+
+/* Selection preview matches highlight color when highlighter tool is active */
+.page-stage[data-tool='highlight'] .textLayer ::selection {
+  background: rgba(255, 212, 59, 0.45);
   color: transparent;
 }
 
@@ -945,6 +1003,12 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Highlight annotations blend behind text with canvas */
+.annotation[data-kind='highlight'],
+.annotation-layer rect[data-kind='highlight'] {
+  mix-blend-mode: multiply;
+}
+
 /* Enable pointer events on drawing/editing tools and on interactive annotation elements */
 .annotation-layer[data-tool='ink'] svg,
 .annotation-layer[data-tool='rectangle'] svg,
@@ -955,7 +1019,8 @@ button:disabled {
   pointer-events: auto;
 }
 
-.annotation-layer .annotation,
+/* Only make annotations interactive when select tool is active, so they don't block highlighting */
+.annotation-layer[data-tool='select'] .annotation,
 .annotation-layer .selection-outline,
 .annotation-layer .text-annotation-editor,
 .annotation-layer .rich-text-editor,

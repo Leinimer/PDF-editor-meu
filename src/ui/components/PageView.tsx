@@ -118,8 +118,9 @@ export function PageView({
     };
   }, [isNearViewport, page, display, zoom]);
 
-  // Text selection based highlighting (requirement 4, 5, 6, 7):
-  // When in 'highlight' mode, selecting text applies automatic highlighting on mouseup.
+  // Text selection based highlighting:
+  // When in 'highlight' mode, selecting text applies automatic highlighting on mouseup,
+  // perfectly aligned with the font line boxes and letter heights.
   const handleMouseUp = useCallback(() => {
     if (tool !== 'highlight' || !stageRef.current) return;
 
@@ -130,24 +131,92 @@ export function PageView({
     const stage = stageRef.current;
 
     // Check if selection intersects this page
-    if (!stage.contains(range.commonAncestorContainer)) {
-      return;
-    }
+    const intersects =
+      typeof range.intersectsNode === 'function'
+        ? range.intersectsNode(stage)
+        : stage.contains(range.commonAncestorContainer);
+    if (!intersects) return;
 
     const stageRect = stage.getBoundingClientRect();
-    const clientRects = Array.from(range.getClientRects());
-    if (clientRects.length === 0) return;
+    const rawClientRects = Array.from(range.getClientRects());
+    if (rawClientRects.length === 0) return;
 
-    // Convert each client rect line into an exact display-space highlight annotation
-    for (const cr of clientRects) {
-      if (cr.width <= 2 || cr.height <= 2) continue;
+    // Keep only rects that fall within this page stage
+    const pageClientRects = rawClientRects.filter((cr) => {
+      if (cr.width < 1 || cr.height < 1) return false;
+      return (
+        cr.bottom > stageRect.top + 0.5 &&
+        cr.top < stageRect.bottom - 0.5 &&
+        cr.right > stageRect.left + 0.5 &&
+        cr.left < stageRect.right - 0.5
+      );
+    });
 
-      const rect: Rect = {
-        x: Math.max((cr.left - stageRect.left) / zoom, 0),
-        y: Math.max((cr.top - stageRect.top) / zoom, 0),
-        width: Math.min(cr.width / zoom, display.width),
-        height: Math.min(cr.height / zoom, display.height),
-      };
+    if (pageClientRects.length === 0) return;
+
+    // Sort primarily by vertical position (top), then horizontal (left)
+    const sortedRects = [...pageClientRects].sort((a, b) => {
+      const verticalDiff = a.top - b.top;
+      const avgHeight = (a.height + b.height) / 2;
+      if (Math.abs(verticalDiff) < avgHeight * 0.35) {
+        return a.left - b.left;
+      }
+      return verticalDiff;
+    });
+
+    interface LineBox {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    }
+
+    const lineBoxes: LineBox[] = [];
+
+    for (const cr of sortedRects) {
+      // Find a matching line that vertically overlaps
+      const matchIndex = lineBoxes.findIndex((box) => {
+        const overlapTop = Math.max(box.top, cr.top);
+        const overlapBottom = Math.min(box.bottom, cr.bottom);
+        const verticalOverlap = overlapBottom - overlapTop;
+        const minHeight = Math.min(box.bottom - box.top, cr.height);
+        if (verticalOverlap <= minHeight * 0.45) return false;
+
+        // On the same line, check if the horizontal gap is reasonable (words on the same line)
+        const gap = Math.max(0, cr.left - box.right, box.left - cr.right);
+        return gap <= Math.max(minHeight * 2, 25);
+      });
+
+      if (matchIndex >= 0) {
+        const box = lineBoxes[matchIndex]!;
+        box.left = Math.min(box.left, cr.left);
+        box.right = Math.max(box.right, cr.right);
+        box.top = Math.min(box.top, cr.top);
+        box.bottom = Math.max(box.bottom, cr.bottom);
+      } else {
+        lineBoxes.push({
+          left: cr.left,
+          right: cr.right,
+          top: cr.top,
+          bottom: cr.bottom,
+        });
+      }
+    }
+
+    // Convert each line box into an exact display-space highlight annotation
+    for (const box of lineBoxes) {
+      const boxWidth = box.right - box.left;
+      const boxHeight = box.bottom - box.top;
+      if (boxWidth < 2 || boxHeight < 2) continue;
+
+      const x = Math.max(0, (box.left - stageRect.left) / zoom);
+      const y = Math.max(0, (box.top - stageRect.top) / zoom);
+      const width = Math.min(boxWidth / zoom, display.width - x);
+      const height = Math.min(boxHeight / zoom, display.height - y);
+
+      if (width <= 1 || height <= 1) continue;
+
+      const rect: Rect = { x, y, width, height };
 
       addAnnotation({
         kind: 'highlight',
@@ -203,7 +272,6 @@ export function PageView({
       <div
         ref={textLayerRef}
         className="textLayer"
-        style={{ width, height }}
       />
 
       {/* Annotation, drawing, and in-place text editing layer */}

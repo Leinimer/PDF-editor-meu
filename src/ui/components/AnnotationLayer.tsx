@@ -93,10 +93,14 @@ export function AnnotationLayer({
   // render — selecting a freshly filtered array would loop the store hook.
   const allAnnotations =
     useActiveDoc((docState) => docState.doc.annotations) ?? EMPTY_DOC.annotations;
-  const annotations = useMemo(
-    () => Object.values(allAnnotations).filter((a) => a.pageId === page.id),
-    [allAnnotations, page.id],
-  );
+  const annotations = useMemo(() => {
+    const list = Object.values(allAnnotations).filter((a) => a.pageId === page.id);
+    return list.sort((a, b) => {
+      if (a.kind === 'highlight' && b.kind !== 'highlight') return -1;
+      if (a.kind !== 'highlight' && b.kind === 'highlight') return 1;
+      return 0;
+    });
+  }, [allAnnotations, page.id]);
   const assets = useEditorStore((state) => state.assets);
   const tool = useEditorStore((state) => state.tool);
   const activeAnnotationId = useActiveDoc((docState) => docState.activeAnnotationId) ?? null;
@@ -575,6 +579,7 @@ function AnnotationShape({
     case 'highlight':
       return (
         <rect
+          data-kind="highlight"
           x={rect.x}
           y={rect.y}
           width={rect.width}

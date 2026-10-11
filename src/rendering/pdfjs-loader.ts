@@ -19,6 +19,7 @@ import type { Rotation, SourcePageInfo } from '../pdf-core/types';
  * canvas so a new render always cancels and awaits its predecessor first.
  */
 const activeRenders = new WeakMap<HTMLCanvasElement, RenderTask>();
+const activeTextLayers = new WeakMap<HTMLElement, { cancel(): void }>();
 
 let workerStarted = false;
 
@@ -160,9 +161,23 @@ export async function loadPdfDocument(bytes: Uint8Array): Promise<LoadedPdfDocum
       const scale = cssWidth / base.width;
       const viewport = page.getViewport({ scale, rotation: totalRotation });
 
+      const previous = activeTextLayers.get(container);
+      if (previous) {
+        previous.cancel();
+      }
+
       container.innerHTML = '';
-      container.style.width = `${Math.round(viewport.width)}px`;
-      container.style.height = `${Math.round(viewport.height)}px`;
+      container.style.setProperty('--scale-factor', `${scale}`);
+      container.style.setProperty('--total-scale-factor', `${scale}`);
+      container.style.setProperty('--scale-round-x', '1px');
+      container.style.setProperty('--scale-round-y', '1px');
+      container.style.setProperty('--user-unit', '1');
+
+      const rawDims = viewport.rawDims as { pageWidth: number; pageHeight: number };
+      const pageWidth = rawDims.pageWidth;
+      const pageHeight = rawDims.pageHeight;
+      container.style.width = `${Math.round(pageWidth * scale)}px`;
+      container.style.height = `${Math.round(pageHeight * scale)}px`;
 
       const textContentSource = await page.getTextContent();
       const textLayer = new pdfjs.TextLayer({
@@ -171,7 +186,17 @@ export async function loadPdfDocument(bytes: Uint8Array): Promise<LoadedPdfDocum
         viewport,
       });
 
-      await textLayer.render();
+      activeTextLayers.set(container, textLayer);
+      try {
+        await textLayer.render();
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortException') return;
+        throw error;
+      } finally {
+        if (activeTextLayers.get(container) === textLayer) {
+          activeTextLayers.delete(container);
+        }
+      }
     },
 
     async destroy(): Promise<void> {
