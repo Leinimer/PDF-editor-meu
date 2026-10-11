@@ -25,17 +25,9 @@ export function CanvasView(): JSX.Element {
   const setActivePage = useEditorStore((state) => state.setActivePage);
   const sources = useEditorStore((state) => state.sources);
 
-  const activeDoc = useActiveDoc((docState) => docState);
-  const activeDocId = activeDoc?.id;
-
   // Active page calculation
   const activeIndex = pages.findIndex((p) => p.id === activePageId);
   const currentDisplayIndex = activeIndex >= 0 ? activeIndex : 0;
-
-  // Reset zoom to auto-fit whenever a new document is opened
-  useEffect(() => {
-    setZoomSetting('fit');
-  }, [activeDocId]);
 
   // Max page width in display points to compute 90% fit-to-width accurately
   const maxPageDimensions = useMemo(() => {
