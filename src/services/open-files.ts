@@ -19,6 +19,7 @@ import { closeDocument } from './new-document';
 export interface OpenResult {
   openedPages: number;
   openedFiles: number;
+  openedDocumentIds?: DocumentId[];
   errors: { name: string; message: string }[];
 }
 
@@ -38,7 +39,8 @@ export async function openFiles(
   options?: OpenOptions,
 ): Promise<OpenResult> {
   const mode = options?.mode ?? 'open';
-  const result: OpenResult = { openedPages: 0, openedFiles: 0, errors: [] };
+  const openedDocumentIds: DocumentId[] = [];
+  const result: OpenResult = { openedPages: 0, openedFiles: 0, openedDocumentIds, errors: [] };
   let insertAt = options?.insertAt;
 
   const pdfFiles: File[] = [];
@@ -77,6 +79,9 @@ export async function openFiles(
         origin: options?.origin,
       });
       if (insertAt !== undefined) insertAt += added;
+      if (documentId && !openedDocumentIds.includes(documentId)) {
+        openedDocumentIds.push(documentId);
+      }
       result.openedPages += added;
       result.openedFiles += 1;
     } catch (error) {

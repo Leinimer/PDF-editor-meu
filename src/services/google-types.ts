@@ -13,15 +13,18 @@ export interface PickerDoc {
   id: string;
   name: string;
   mimeType: string;
+  url?: string;
   sizeBytes?: number;
   lastEditedUtc?: number;
   version?: string;
   modifiedTime?: string;
+  [key: string]: unknown;
 }
 
 export interface PickerResponse {
   action: string;
   docs?: PickerDoc[];
+  [key: string]: unknown;
 }
 
 export interface PickerBuilderInstance {
@@ -29,9 +32,15 @@ export interface PickerBuilderInstance {
   setOAuthToken(token: string): PickerBuilderInstance;
   setDeveloperKey(key: string): PickerBuilderInstance;
   setAppId(appId: string): PickerBuilderInstance;
+  setOrigin(origin: string): PickerBuilderInstance;
+  setTitle(title: string): PickerBuilderInstance;
+  setSize(width: number, height: number): PickerBuilderInstance;
+  enableFeature(feature: string | number): PickerBuilderInstance;
   setCallback(callback: (data: PickerResponse) => void): PickerBuilderInstance;
   build(): {
     setVisible(visible: boolean): void;
+    dispose?(): void;
+    isVisible?(): boolean;
   };
 }
 
@@ -40,6 +49,7 @@ export interface DocsViewInstance {
   setIncludeFolders(include: boolean): DocsViewInstance;
   setSelectFolderEnabled(enabled: boolean): DocsViewInstance;
   setMode(mode: string): DocsViewInstance;
+  setParent?(parent: string): DocsViewInstance;
 }
 
 declare global {
@@ -63,6 +73,7 @@ declare global {
         DocsView: new (viewId?: string) => DocsViewInstance;
         ViewId: {
           DOCS: string;
+          ALL?: string;
         };
         DocsViewMode: {
           LIST: string;
@@ -71,6 +82,22 @@ declare global {
         Action: {
           PICKED: string;
           CANCEL: string;
+          LOADED?: string;
+        };
+        Feature?: {
+          SUPPORT_DRIVES?: string | number;
+          NAV_HIDDEN?: string | number;
+          MULTISELECT_ENABLED?: string | number;
+        };
+        Document?: {
+          ID: string;
+          NAME: string;
+          MIME_TYPE: string;
+          URL: string;
+        };
+        Response?: {
+          ACTION: string;
+          DOCS: string;
         };
       };
     };
@@ -79,3 +106,4 @@ declare global {
     };
   }
 }
+

@@ -10,10 +10,24 @@ const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
 
 function getValidBasePath(val?: string): string {
   if (!val || val === '/') return '/';
-  if (val.startsWith('/')) return val;
-  // If val is a domain without leading slash, use '/' for server.base
-  if (val.includes('.') || val.includes(':')) return '/';
-  return `/${val}`;
+  const trimmed = val.trim();
+  // Pure numbers (such as Google Cloud project numbers like '651839954384') are not URL paths
+  if (/^\d+$/.test(trimmed)) return '/';
+  // Full URLs: extract pathname if non-root
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const pathname = new URL(trimmed).pathname;
+      return pathname.length > 1 ? (pathname.endsWith('/') ? pathname : `${pathname}/`) : '/';
+    } catch {
+      return '/';
+    }
+  }
+  // Hostnames / domains without subpath (e.g. 'agoraeuapasso.ai.studio')
+  if (trimmed.includes('.') || trimmed.includes(':')) {
+    return '/';
+  }
+  const withLeading = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
 }
 
 const basePath = getValidBasePath(process.env['PUBLIC_BASE_PATH']);

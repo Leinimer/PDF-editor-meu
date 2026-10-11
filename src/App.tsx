@@ -4,11 +4,13 @@
  * file drop, toasts, and the busy overlay.
  */
 
-import { useEffect, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { ensureDocument } from './services/new-document';
 import { openFiles } from './services/open-files';
 import { BusyOverlay } from './ui/components/BusyOverlay';
 import { Workspace } from './ui/components/Workspace';
+import { PrivacyDialog } from './ui/components/dialogs/PrivacyDialog';
+import { TermsDialog } from './ui/components/dialogs/TermsDialog';
 import { useFileDrop } from './ui/hooks/useFileDrop';
 import { Icon } from './ui/icons';
 import { ToastProvider, useToasts } from './ui/toast/Toasts';
@@ -33,6 +35,35 @@ function AppInner(): JSX.Element {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const [legalModal, setLegalModal] = useState<'privacy' | 'terms' | null>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#privacidade' || hash === '#privacy') return 'privacy';
+      if (hash === '#termos' || hash === '#terms') return 'terms';
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#privacidade' || hash === '#privacy') {
+        setLegalModal('privacy');
+      } else if (hash === '#termos' || hash === '#terms') {
+        setLegalModal('terms');
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const closeLegalModal = () => {
+    setLegalModal(null);
+    if (typeof window !== 'undefined' && window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  };
 
   const dragging = useFileDrop((files) => {
     void openFiles(files).then((result) => {
@@ -61,6 +92,28 @@ function AppInner(): JSX.Element {
             vensas GmbH
           </a>{' '}
           product ·{' '}
+          <a
+            href="#privacidade"
+            onClick={(e) => {
+              e.preventDefault();
+              setLegalModal('privacy');
+              window.location.hash = 'privacidade';
+            }}
+          >
+            Política de Privacidade
+          </a>{' '}
+          ·{' '}
+          <a
+            href="#termos"
+            onClick={(e) => {
+              e.preventDefault();
+              setLegalModal('terms');
+              window.location.hash = 'termos';
+            }}
+          >
+            Termos de Serviço
+          </a>{' '}
+          ·{' '}
           <a href="https://www.vensas.de/imprint" rel="noopener">
             Imprint
           </a>{' '}
@@ -78,6 +131,9 @@ function AppInner(): JSX.Element {
           </a>
         </p>
       </footer>
+
+      <PrivacyDialog open={legalModal === 'privacy'} onClose={closeLegalModal} />
+      <TermsDialog open={legalModal === 'terms'} onClose={closeLegalModal} />
 
       {dragging && (
         <div className="drop-overlay" aria-hidden="true">

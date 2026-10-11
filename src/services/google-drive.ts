@@ -101,9 +101,14 @@ export function loadGsiScript(): Promise<void> {
 /**
  * Requests OAuth2 access token with drive.file scope using Google Identity Services.
  */
-export async function requestGoogleAccessToken(customClientId?: string): Promise<string> {
-  const existing = getCachedToken();
-  if (existing) return existing;
+export async function requestGoogleAccessToken(
+  customClientId?: string,
+  forceRefresh = false,
+): Promise<string> {
+  if (!forceRefresh) {
+    const existing = getCachedToken();
+    if (existing) return existing;
+  }
 
   const clientId = customClientId || getGoogleDriveConfig().clientId;
   if (!clientId) {
@@ -121,6 +126,7 @@ export async function requestGoogleAccessToken(customClientId?: string): Promise
         scope: 'https://www.googleapis.com/auth/drive.file',
         callback: (response: TokenResponse) => {
           if (response.error) {
+            cachedToken = null;
             if (response.error === 'access_denied' || response.error === 'popup_closed_by_user') {
               reject(new Error('Autorização do Google cancelada pelo usuário.'));
             } else {
@@ -134,6 +140,7 @@ export async function requestGoogleAccessToken(customClientId?: string): Promise
           }
 
           if (!response.access_token) {
+            cachedToken = null;
             reject(new Error('Token de acesso não fornecido pelo Google.'));
             return;
           }
@@ -151,12 +158,15 @@ export async function requestGoogleAccessToken(customClientId?: string): Promise
           resolve(response.access_token);
         },
         error_callback: (err: unknown) => {
+          cachedToken = null;
           reject(err instanceof Error ? err : new Error('Falha na autenticação do Google.'));
         },
       });
 
-      client.requestAccessToken({ prompt: '' });
+      // Se for forçado refresh, solicita consentimento/seleção se necessário
+      client.requestAccessToken({ prompt: forceRefresh ? 'select_account' : '' });
     } catch (err) {
+      cachedToken = null;
       reject(err instanceof Error ? err : new Error('Erro ao inicializar autenticação com Google.'));
     }
   });
@@ -168,7 +178,7 @@ export async function requestGoogleAccessToken(customClientId?: string): Promise
 export async function getGoogleDriveFileMetadata(
   fileId: string,
   token: string,
-): Promise<{ id: string; name: string; modifiedTime?: string; version?: string }> {
+): Promise<{ id: string; name: string; modifiedTime?: string; version?: string; mimeType?: string }> {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,modifiedTime,version,mimeType`;
   const response = await fetch(url, {
     headers: {
@@ -179,7 +189,13 @@ export async function getGoogleDriveFileMetadata(
   if (!response.ok) {
     if (response.status === 401) {
       cachedToken = null;
-      throw new Error('Sessão do Google Drive expirada. Por favor, autorize novamente.');
+      throw new Error('Sessão do Google Drive expirada (401). Por favor, autorize novamente.');
+    }
+    if (response.status === 403) {
+      throw new Error('Permissão insuficiente para obter informações deste arquivo no Google Drive (403).');
+    }
+    if (response.status === 404) {
+      throw new Error('Arquivo não encontrado no Google Drive (404).');
     }
     throw new Error(`Falha ao obter metadados do Google Drive (código HTTP ${response.status}).`);
   }
@@ -189,30 +205,84 @@ export async function getGoogleDriveFileMetadata(
 
 /**
  * Downloads a file directly from Google Drive API v3 as a Blob.
+ *
+ * Enforces OAuth Bearer token header, verifies HTTP status, ensures response is
+ * not an HTML/login page, and validates the %PDF- file signature.
  */
 export async function downloadGoogleDriveFile(fileId: string, token: string): Promise<Blob> {
+  if (!token) {
+    throw new Error('Token de acesso do Google ausente. É necessária a autenticação.');
+  }
+
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (err) {
+    throw new Error(
+      `Falha de conexão com o Google Drive: ${err instanceof Error ? err.message : 'Erro de rede'}.`,
+      { cause: err },
+    );
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
-      cachedToken = null; // Invalidate expired token
-      throw new Error('Sessão do Google Drive expirada. Por favor, autorize novamente.');
+      cachedToken = null; // Invalida o token expirado
+      throw new Error('Sessão do Google Drive expirada (401). Por favor, autorize novamente.');
     }
     if (response.status === 403) {
-      throw new Error('Permissão insuficiente para acessar este arquivo no Google Drive.');
+      throw new Error(
+        'Permissão insuficiente para acessar este arquivo no Google Drive (403). Verifique se você tem acesso ao arquivo.',
+      );
     }
     if (response.status === 404) {
-      throw new Error('Arquivo não encontrado no Google Drive.');
+      throw new Error('Arquivo não encontrado no Google Drive (404).');
     }
-    throw new Error(`Falha ao baixar o arquivo do Google Drive (código HTTP ${response.status}).`);
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Falha ao baixar o arquivo do Google Drive (código HTTP ${response.status}): ${errText || response.statusText}`);
   }
 
-  return response.blob();
+  // 1. Validar Content-Type
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('text/html')) {
+    throw new Error(
+      'A resposta do Google Drive retornou uma página HTML em vez do arquivo PDF (possível redirecionamento de login). O arquivo não pôde ser aberto.',
+    );
+  }
+
+  // 2. Ler conteúdo binário
+  const arrayBuffer = await response.arrayBuffer();
+  if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+    throw new Error('O arquivo retornado pelo Google Drive está vazio (0 bytes).');
+  }
+
+  // 3. Inspecionar cabeçalho para descartar HTML e confirmar assinatura %PDF-
+  const previewSlice = arrayBuffer.slice(0, Math.min(1024, arrayBuffer.byteLength));
+  const previewBytes = new Uint8Array(previewSlice);
+  const previewText = new TextDecoder('latin1').decode(previewBytes);
+
+  if (
+    previewText.toLowerCase().includes('<!doctype') ||
+    previewText.toLowerCase().includes('<html') ||
+    previewText.toLowerCase().includes('<body')
+  ) {
+    throw new Error(
+      'A resposta recebida do Google Drive é uma página web HTML de login/erro, e não um documento PDF.',
+    );
+  }
+
+  if (!previewText.includes('%PDF-')) {
+    throw new Error(
+      'O arquivo baixado do Google Drive não contém uma assinatura PDF válida (%PDF-). Não é possível abrir.',
+    );
+  }
+
+  return new Blob([arrayBuffer], { type: 'application/pdf' });
 }
 
 /**
