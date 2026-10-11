@@ -29,13 +29,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # The repository currently has no committed pnpm-lock.yaml.
+      # Do not enable setup-node's pnpm cache or frozen-lockfile until a lockfile is committed.
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test:coverage
       - run: pnpm build
         env:
+          PUBLIC_BASE_PATH: ${{ vars.PUBLIC_BASE_PATH || '/PDF-editor-meu/' }}
           PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.PUBLIC_GOOGLE_CLIENT_ID || secrets.PUBLIC_GOOGLE_CLIENT_ID }}
           PUBLIC_GOOGLE_API_KEY: ${{ vars.PUBLIC_GOOGLE_API_KEY || secrets.PUBLIC_GOOGLE_API_KEY }}
           PUBLIC_GOOGLE_APP_ID: ${{ vars.PUBLIC_GOOGLE_APP_ID || secrets.PUBLIC_GOOGLE_APP_ID }}
@@ -58,10 +60,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm build
         env:
+          PUBLIC_BASE_PATH: ${{ vars.PUBLIC_BASE_PATH || '/PDF-editor-meu/' }}
           PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.PUBLIC_GOOGLE_CLIENT_ID || secrets.PUBLIC_GOOGLE_CLIENT_ID }}
           PUBLIC_GOOGLE_API_KEY: ${{ vars.PUBLIC_GOOGLE_API_KEY || secrets.PUBLIC_GOOGLE_API_KEY }}
           PUBLIC_GOOGLE_APP_ID: ${{ vars.PUBLIC_GOOGLE_APP_ID || secrets.PUBLIC_GOOGLE_APP_ID }}
