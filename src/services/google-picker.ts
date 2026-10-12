@@ -139,8 +139,10 @@ export async function showGooglePicker(
   return new Promise<PickedGoogleFile | null>((resolve, reject) => {
     let picker: ReturnType<InstanceType<typeof googlePicker.PickerBuilder>['build']> | null = null;
     let completed = false;
+    let timeoutId = 0;
 
     const closePicker = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
       try {
         picker?.setVisible(false);
       } catch {
@@ -163,6 +165,12 @@ export async function showGooglePicker(
       reject(error);
     };
 
+    // If the Picker never dispatches PICKED/CANCEL, fail visibly instead of leaving
+    // the app stuck forever. Five minutes is long enough for normal browsing.
+    timeoutId = window.setTimeout(() => {
+      fail(new Error('O Google Picker não concluiu a seleção em 5 minutos. Feche o seletor e tente novamente.'));
+    }, 5 * 60 * 1000);
+
     try {
       const view = new googlePicker.DocsView(googlePicker.ViewId.DOCS)
         .setMimeTypes('application/pdf')
@@ -182,14 +190,19 @@ export async function showGooglePicker(
           const actionKey = googlePicker.Response?.ACTION || 'action';
           const action = responseObject[actionKey] ?? responseObject.action;
 
-          if (action === 'loaded' || action === googlePicker.Action.LOADED) return;
+          if (action === 'loaded' || (googlePicker.Action.LOADED && action === googlePicker.Action.LOADED)) return;
 
           if (action === googlePicker.Action.CANCEL || action === 'cancel') {
             finish(null);
             return;
           }
 
-          if (action !== googlePicker.Action.PICKED && action !== 'picked') return;
+          if (action !== googlePicker.Action.PICKED && action !== 'picked') {
+            // Do not log file IDs, OAuth tokens, or file names. This helps diagnose
+            // a response-shape mismatch without exposing the user's Drive data.
+            console.warn('[Google Picker] Ignoring unexpected callback action:', action ?? '(missing)');
+            return;
+          }
 
           // Use the exact response constants from Google's official sample.
           const documentsKey = googlePicker.Response?.DOCUMENTS || 'docs';
