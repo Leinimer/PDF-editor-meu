@@ -172,11 +172,11 @@ export async function requestGoogleAccessToken(
         },
       });
 
-      // First connection shows consent/account UI. Subsequent access uses the existing grant.
+      // Match Google's official Picker sample: request consent when this page has no
+      // in-memory access token. Once the callback returns a token, subsequent calls reuse
+      // the cache above and do not open another sign-in window.
       tokenClient.requestAccessToken({
-        // Do not force a new consent screen on every fresh page load. Google reuses
-        // a previously granted session when prompt is empty; only force account choice on refresh.
-        prompt: forceRefresh ? 'select_account' : '',
+        prompt: forceRefresh ? '' : 'consent',
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error('Não foi possível iniciar a autorização Google.'));
