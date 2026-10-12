@@ -26,9 +26,7 @@ import { useActiveDoc } from '../hooks/useActiveDoc';
 import { THEME_LABELS, useTheme } from '../hooks/useTheme';
 import { Icon, type IconName } from '../icons';
 import {
-  disconnectGoogleAccount,
   getGoogleDriveFileMetadata,
-  hasGoogleAuth,
   requestGoogleAccessToken,
   updateGoogleDriveFile,
 } from '../../services/google-drive';
@@ -118,17 +116,6 @@ export function Toolbar({
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Erro ao abrir arquivo do Google Drive.';
-      toasts.push('error', msg);
-    }
-  };
-
-  const handleConnectGoogle = async () => {
-    setOpenMenuOpen(false);
-    try {
-      await requestGoogleAccessToken();
-      toasts.push('success', 'Conta Google autorizada com sucesso.');
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Falha na autorização do Google.';
       toasts.push('error', msg);
     }
   };
@@ -379,32 +366,6 @@ export function Toolbar({
                   <Icon name="googleDrive" size={16} />
                   <span>Google Drive</span>
                 </button>
-                <div style={{ height: 1, background: 'var(--border)', margin: '0.2rem 0' }} />
-                {hasGoogleAuth() ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu-item is-danger"
-                    onClick={() => {
-                      setOpenMenuOpen(false);
-                      disconnectGoogleAccount();
-                      toasts.push('success', 'Conta Google desconectada da sessão.');
-                    }}
-                  >
-                    <Icon name="close" size={14} />
-                    <span>Desconectar Google</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu-item"
-                    onClick={handleConnectGoogle}
-                  >
-                    <Icon name="lock" size={14} />
-                    <span>Conectar conta Google</span>
-                  </button>
-                )}
               </div>
             </>
           )}
