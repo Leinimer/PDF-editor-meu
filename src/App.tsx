@@ -7,6 +7,7 @@
 import { useEffect, useState, type JSX } from 'react';
 import { ensureDocument } from './services/new-document';
 import { openFiles } from './services/open-files';
+import { preloadGoogleDriveLibraries } from './services/google-picker';
 import { BusyOverlay } from './ui/components/BusyOverlay';
 import { Workspace } from './ui/components/Workspace';
 import { PrivacyDialog } from './ui/components/dialogs/PrivacyDialog';
@@ -30,6 +31,11 @@ function AppInner(): JSX.Element {
 
   // Boot into a blank sheet so there is always something to work on.
   useEffect(() => {
+    // Preload Google scripts before a user click so OAuth can open its authorization UI reliably.
+    void preloadGoogleDriveLibraries().catch((error: unknown) => {
+      console.warn('Google Drive libraries are not ready yet:', error);
+    });
+
     void ensureDocument().catch(() => {
       toasts.push('error', 'Could not create a blank document.');
     });
