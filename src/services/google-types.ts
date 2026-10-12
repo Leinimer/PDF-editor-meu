@@ -22,7 +22,7 @@ export interface PickerDoc {
 }
 
 export interface PickerResponse {
-  action: string;
+  action?: string;
   docs?: PickerDoc[];
   [key: string]: unknown;
 }
@@ -97,7 +97,8 @@ declare global {
         };
         Response?: {
           ACTION: string;
-          DOCS: string;
+          DOCUMENTS?: string;
+          DOCS?: string;
         };
       };
     };
