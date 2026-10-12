@@ -174,7 +174,9 @@ export async function requestGoogleAccessToken(
 
       // First connection shows consent/account UI. Subsequent access uses the existing grant.
       tokenClient.requestAccessToken({
-        prompt: forceRefresh ? 'select_account' : getCachedToken() ? '' : 'consent',
+        // Do not force a new consent screen on every fresh page load. Google reuses
+        // a previously granted session when prompt is empty; only force account choice on refresh.
+        prompt: forceRefresh ? 'select_account' : '',
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error('Não foi possível iniciar a autorização Google.'));
