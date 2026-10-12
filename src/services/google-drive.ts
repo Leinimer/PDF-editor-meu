@@ -233,6 +233,7 @@ export async function downloadGoogleDriveFile(fileId: string, token: string): Pr
   } catch (error) {
     throw new Error(
       `Falha de rede ao baixar o PDF pela Drive API. Verifique conexão e permissões de origem. ${error instanceof Error ? error.message : ''}`,
+      { cause: error },
     );
   }
 
