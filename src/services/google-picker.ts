@@ -1,9 +1,11 @@
 /**
- * Google Picker integration.
+ * Google Drive -> PDF editor integration.
  *
- * Uses the official Picker response keys, downloads the selected PDF through
- * the Drive REST API, validates its bytes, and hands the File to openFiles().
- * No Drive preview page, iframe, or secondary window is used to load the PDF.
+ * Based on Google's official Picker sample:
+ * https://github.com/googleworkspace/browser-samples/blob/main/drive/picker/helloworld.html
+ *
+ * The Picker only returns metadata. PDF bytes are retrieved separately with
+ * Drive API v3 files.get?alt=media and handed to the existing openFiles() pipeline.
  */
 
 import { useEditorStore } from '../editor-state/store';
@@ -12,6 +14,7 @@ import {
   downloadGoogleDriveFile,
   getGoogleDriveConfig,
   getGoogleDriveFileMetadata,
+  loadGoogleIdentityServices,
   requestGoogleAccessToken,
 } from './google-drive';
 import type { PickerDoc, PickerResponse } from './google-types';
@@ -24,69 +27,65 @@ export interface PickedGoogleFile {
   mimeType: string;
 }
 
-let pickerScriptPromise: Promise<void> | null = null;
-let isOpeningDrive = false;
+let pickerLibraryPromise: Promise<void> | null = null;
+let opening = false;
 
-function loadScript(src: string): Promise<void> {
-  const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-  if (existing?.dataset.loaded === 'true') return Promise.resolve();
+function loadApiScript(): Promise<void> {
+  if (window.gapi && window.google?.picker) return Promise.resolve();
 
-  if (existing) {
-    return new Promise<void>((resolve, reject) => {
-      const onLoad = () => {
-        existing.dataset.loaded = 'true';
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error(`Não foi possível carregar o script: ${src}`));
-      };
-      const cleanup = () => {
-        existing.removeEventListener('load', onLoad);
-        existing.removeEventListener('error', onError);
-      };
-      existing.addEventListener('load', onLoad, { once: true });
-      existing.addEventListener('error', onError, { once: true });
-      // A script may already have completed loading before its marker was set.
-      if (src.includes('/api.js') && window.gapi) {
-        cleanup();
-        resolve();
-      } else if (src.includes('/gsi/client') && window.google?.accounts?.oauth2) {
-        cleanup();
-        resolve();
-      }
-    });
-  }
+  const existing = document.querySelector<HTMLScriptElement>(
+    'script[src="https://apis.google.com/js/api.js"]',
+  );
 
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      script.dataset.loaded = 'true';
-      resolve();
-    };
-    script.onerror = () => {
-      script.remove();
-      reject(new Error(`Não foi possível carregar a biblioteca do Google: ${src}`));
-    };
-    document.head.appendChild(script);
-  });
+  const scriptLoaded = existing?.dataset.loadState === 'loaded';
+  const scriptPromise = scriptLoaded
+    ? Promise.resolve()
+    : new Promise<void>((resolve, reject) => {
+        let script = existing;
+        if (!script) {
+          script = document.createElement('script');
+          script.src = 'https://apis.google.com/js/api.js';
+          script.async = true;
+          script.defer = true;
+          document.head.appendChild(script);
+        }
+
+        const onLoad = () => {
+          script!.dataset.loadState = 'loaded';
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error('Não foi possível carregar a biblioteca Google API.'));
+        };
+        const cleanup = () => {
+          script!.removeEventListener('load', onLoad);
+          script!.removeEventListener('error', onError);
+        };
+
+        script!.addEventListener('load', onLoad, { once: true });
+        script!.addEventListener('error', onError, { once: true });
+
+        // The script may already have completed loading before listeners were attached.
+        if (window.gapi) {
+          cleanup();
+          resolve();
+        }
+      });
+
+  return scriptPromise;
 }
 
-/** Load the Google API client and Picker library once. */
-export function loadGooglePickerScript(): Promise<void> {
+/** Initialize Google Picker once. Call on app startup so auth is ready before user interaction. */
+export function loadGooglePickerLibrary(): Promise<void> {
   if (window.google?.picker) return Promise.resolve();
-  if (pickerScriptPromise) return pickerScriptPromise;
+  if (pickerLibraryPromise) return pickerLibraryPromise;
 
-  pickerScriptPromise = (async () => {
-    await loadScript('https://apis.google.com/js/api.js');
+  pickerLibraryPromise = (async () => {
+    await loadApiScript();
 
-    if (!window.gapi) {
-      throw new Error('A biblioteca Google API Client não foi inicializada.');
-    }
+    if (!window.gapi) throw new Error('Google API Client não foi inicializado.');
 
     await new Promise<void>((resolve, reject) => {
       window.gapi!.load('picker', {
@@ -96,144 +95,141 @@ export function loadGooglePickerScript(): Promise<void> {
     });
 
     if (!window.google?.picker) {
-      throw new Error('A API Google Picker carregou, mas não ficou disponível.');
+      throw new Error('A biblioteca do Google Picker não ficou disponível.');
     }
   })().catch((error: unknown) => {
-    pickerScriptPromise = null;
-    throw error instanceof Error ? error : new Error('Falha ao carregar o Google Picker.');
+    pickerLibraryPromise = null;
+    throw error instanceof Error ? error : new Error('Falha ao inicializar o Google Picker.');
   });
 
-  return pickerScriptPromise;
+  return pickerLibraryPromise;
 }
 
-function getStringField(
-  value: Record<string, unknown>,
-  directName: string,
-  pickerFieldName?: string,
+/** Preload both Google libraries before a click needs to request OAuth. */
+export async function preloadGoogleDriveLibraries(): Promise<void> {
+  await Promise.all([loadGoogleIdentityServices(), loadGooglePickerLibrary()]);
+}
+
+function getPickerValue(
+  object: Record<string, unknown>,
+  key: string | undefined,
+  fallback: string,
 ): string | undefined {
-  const direct = value[directName];
-  if (typeof direct === 'string' && direct.length > 0) return direct;
-  if (pickerFieldName) {
-    const field = value[pickerFieldName];
-    if (typeof field === 'string' && field.length > 0) return field;
-  }
-  return undefined;
+  const value = (key ? object[key] : undefined) ?? object[fallback];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** Open the official Google Picker and return the selected PDF metadata. */
+/** Show the official Google Picker dialog and return the selected PDF's ID. */
 export async function showGooglePicker(
-  token: string,
+  accessToken: string,
   apiKey: string,
-  appId?: string,
+  appId: string,
 ): Promise<PickedGoogleFile | null> {
-  if (!token) throw new Error('A autorização do Google expirou. Conecte sua conta novamente.');
+  if (!accessToken) throw new Error('Não há autorização ativa do Google Drive.');
   if (!apiKey) throw new Error('PUBLIC_GOOGLE_API_KEY não está configurada.');
+  if (!appId || !/^\d+$/.test(appId)) {
+    throw new Error('PUBLIC_GOOGLE_APP_ID deve conter o número do projeto Google Cloud, somente dígitos.');
+  }
 
-  await loadGooglePickerScript();
+  await loadGooglePickerLibrary();
 
-  const pickerApi = window.google?.picker;
-  if (!pickerApi) throw new Error('Google Picker indisponível após o carregamento.');
+  const googlePicker = window.google?.picker;
+  if (!googlePicker) throw new Error('Google Picker não está disponível.');
 
   return new Promise<PickedGoogleFile | null>((resolve, reject) => {
-    let picker: ReturnType<InstanceType<typeof pickerApi.PickerBuilder>['build']> | null = null;
-    let settled = false;
+    let picker: ReturnType<InstanceType<typeof googlePicker.PickerBuilder>['build']> | null = null;
+    let completed = false;
 
-    const close = () => {
-      if (!picker) return;
+    const closePicker = () => {
       try {
-        picker.setVisible(false);
-        picker.dispose?.();
+        picker?.setVisible(false);
       } catch {
-        // The Picker may already have closed itself.
+        // Ignore if Google has already closed the dialog.
       }
       picker = null;
     };
 
     const finish = (result: PickedGoogleFile | null) => {
-      if (settled) return;
-      settled = true;
-      close();
+      if (completed) return;
+      completed = true;
+      closePicker();
       resolve(result);
     };
 
     const fail = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      close();
+      if (completed) return;
+      completed = true;
+      closePicker();
       reject(error);
     };
 
     try {
-      const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
+      const view = new googlePicker.DocsView(googlePicker.ViewId.DOCS)
         .setMimeTypes('application/pdf')
         .setIncludeFolders(false)
         .setSelectFolderEnabled(false);
 
-      const builder = new pickerApi.PickerBuilder()
+      const builder = new googlePicker.PickerBuilder()
         .setDeveloperKey(apiKey)
-        .setOAuthToken(token)
+        .setAppId(appId)
+        .setOAuthToken(accessToken)
         .setOrigin(window.location.origin)
         .addView(view)
         .setCallback((response: PickerResponse) => {
-          if (!response || settled) return;
+          if (!response || completed) return;
 
           const responseObject = response as Record<string, unknown>;
-          const responseKeys = pickerApi.Response;
-          const action =
-            getStringField(responseObject, 'action', responseKeys?.ACTION) ?? '';
+          const actionKey = googlePicker.Response?.ACTION || 'action';
+          const action = responseObject[actionKey] ?? responseObject.action;
 
-          if (action === 'loaded' || action === pickerApi.Action.LOADED) return;
+          if (action === 'loaded' || action === googlePicker.Action.LOADED) return;
 
-          if (action === pickerApi.Action.CANCEL || action === 'cancel') {
+          if (action === googlePicker.Action.CANCEL || action === 'cancel') {
             finish(null);
             return;
           }
 
-          if (action !== pickerApi.Action.PICKED && action !== 'picked') return;
+          if (action !== googlePicker.Action.PICKED && action !== 'picked') return;
 
-          // The official API calls this Response.DOCUMENTS. Keep the literal
-          // "docs" fallback for Picker versions that expose the JSON property directly.
-          const documentKey = responseKeys?.DOCUMENTS ?? responseKeys?.DOCS ?? 'docs';
-          const rawDocs = Array.isArray(response.docs)
-            ? response.docs
-            : Array.isArray(responseObject[documentKey])
-              ? (responseObject[documentKey] as PickerDoc[])
-              : Array.isArray(responseObject.docs)
-                ? (responseObject.docs as PickerDoc[])
-                : [];
+          // Use the exact response constants from Google's official sample.
+          const documentsKey = googlePicker.Response?.DOCUMENTS || 'docs';
+          const rawDocuments =
+            responseObject[documentsKey] ??
+            responseObject.docs;
+          const documents = Array.isArray(rawDocuments) ? rawDocuments : [];
+          const first = documents[0] as (PickerDoc & Record<string, unknown>) | undefined;
 
-          const first = rawDocs[0] as (PickerDoc & Record<string, unknown>) | undefined;
           if (!first) {
-            fail(new Error('O Google Picker confirmou a seleção, mas não retornou um arquivo.'));
+            fail(new Error('O Picker confirmou a seleção, mas não retornou o documento escolhido.'));
             return;
           }
 
-          const documentKeys = pickerApi.Document;
-          const id = getStringField(first, 'id', documentKeys?.ID);
-          const name = getStringField(first, 'name', documentKeys?.NAME) ?? 'documento.pdf';
-          const mimeType =
-            getStringField(first, 'mimeType', documentKeys?.MIME_TYPE) ?? 'application/pdf';
+          const documentKeys = googlePicker.Document;
+          const id = getPickerValue(first, documentKeys?.ID, 'id');
+          const name = getPickerValue(first, documentKeys?.NAME, 'name') || 'documento.pdf';
+          const mimeType = getPickerValue(first, documentKeys?.MIME_TYPE, 'mimeType') || '';
 
           if (!id) {
-            fail(new Error('O Google Picker não retornou o ID do arquivo selecionado.'));
+            fail(new Error('O Google Picker não retornou o ID do arquivo.'));
             return;
           }
 
-          if (mimeType !== 'application/pdf' && !name.toLowerCase().endsWith('.pdf')) {
-            fail(new Error('Selecione um arquivo PDF do Google Drive.'));
+          if (mimeType && mimeType !== 'application/pdf' && !name.toLowerCase().endsWith('.pdf')) {
+            fail(new Error('Selecione um arquivo PDF.'));
             return;
           }
 
-          finish({ id, name, mimeType: 'application/pdf' });
+          finish({
+            id,
+            name: name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`,
+            mimeType: 'application/pdf',
+          });
         });
-
-      // appId must be the numeric Google Cloud project number, never a Client ID.
-      if (appId) builder.setAppId(appId);
 
       picker = builder.build();
       picker.setVisible(true);
     } catch (error) {
-      fail(error instanceof Error ? error : new Error('Não foi possível abrir o Google Picker.'));
+      fail(error instanceof Error ? error : new Error('Não foi possível abrir o seletor Google Drive.'));
     }
   });
 }
@@ -243,85 +239,85 @@ export interface OpenGoogleDriveResult {
   openResult: OpenResult;
 }
 
-/**
- * End-to-end flow: OAuth -> Picker -> Drive REST download -> PDF validation ->
- * existing openFiles pipeline -> activate the created document tab.
- */
+/** Complete flow: authorization -> Picker -> actual PDF bytes -> existing editor pipeline. */
 export async function openPdfFromGoogleDrive(): Promise<OpenGoogleDriveResult | null> {
-  if (isOpeningDrive) return null;
-  isOpeningDrive = true;
+  if (opening) return null;
+  opening = true;
 
   const store = useEditorStore.getState();
-
   try {
     const { clientId, apiKey, appId } = getGoogleDriveConfig();
-    if (!clientId || !apiKey) {
+    if (!clientId || !apiKey || !appId) {
       throw new Error(
-        'Configuração do Google Drive incompleta. Confira PUBLIC_GOOGLE_CLIENT_ID e PUBLIC_GOOGLE_API_KEY.',
+        'Configuração incompleta. Confira PUBLIC_GOOGLE_CLIENT_ID, PUBLIC_GOOGLE_API_KEY e PUBLIC_GOOGLE_APP_ID nas variáveis de ambiente do projeto publicado.',
       );
     }
 
-    // Token OAuth is obtained before creating the Picker, as required by Google's sample.
-    store.setBusy({ label: 'Autorizando Google Drive...', progress: null });
-    let accessToken = await requestGoogleAccessToken(clientId);
+    store.setBusy({ label: 'Conectando ao Google Drive...', progress: null });
+    // Script is preloaded on startup; token popup is initiated by this user action.
+    let token = await requestGoogleAccessToken(clientId);
 
-    store.setBusy({ label: 'Abrindo seletor de arquivos...', progress: null });
-    const picked = await showGooglePicker(accessToken, apiKey, appId);
-    if (!picked) return null;
+    store.setBusy({ label: 'Abrindo seus arquivos do Google Drive...', progress: null });
+    const selected = await showGooglePicker(token, apiKey, appId);
+    if (!selected) return null;
 
-    store.setBusy({ label: `Baixando "${picked.name}" do Google Drive...`, progress: null });
-
-    let blob: Blob;
+    store.setBusy({ label: `Verificando "${selected.name}"...`, progress: null });
+    let metadata: Awaited<ReturnType<typeof getGoogleDriveFileMetadata>>;
     try {
-      blob = await downloadGoogleDriveFile(picked.id, accessToken);
+      metadata = await getGoogleDriveFileMetadata(selected.id, token);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('(401)') && !message.includes('401')) throw error;
-
-      accessToken = await requestGoogleAccessToken(clientId, true);
-      blob = await downloadGoogleDriveFile(picked.id, accessToken);
+      if (!message.includes('401')) throw error;
+      token = await requestGoogleAccessToken(clientId, true);
+      metadata = await getGoogleDriveFileMetadata(selected.id, token);
     }
 
-    if (blob.size === 0) throw new Error('O Google Drive retornou um arquivo vazio.');
+    if (metadata.mimeType && metadata.mimeType !== 'application/pdf') {
+      throw new Error(`"${metadata.name}" não é um PDF. Selecione um arquivo PDF no Google Drive.`);
+    }
+    if (metadata.capabilities?.canDownload === false) {
+      throw new Error('O proprietário do arquivo desativou o download deste PDF no Google Drive.');
+    }
 
-    const fileName = picked.name.toLowerCase().endsWith('.pdf') ? picked.name : `${picked.name}.pdf`;
-    const file = new File([blob], fileName, { type: 'application/pdf' });
-
-    // Metadata is optional for opening, but retained for future save-to-source support.
-    let modifiedTime: string | undefined;
-    let version: string | undefined;
+    store.setBusy({ label: `Baixando "${metadata.name}"...`, progress: null });
+    let blob: Blob;
     try {
-      const metadata = await getGoogleDriveFileMetadata(picked.id, accessToken);
-      modifiedTime = metadata.modifiedTime;
-      version = metadata.version;
-    } catch {
-      // A metadata lookup must not prevent opening a PDF whose bytes were downloaded successfully.
+      blob = await downloadGoogleDriveFile(selected.id, token);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('401')) throw error;
+      token = await requestGoogleAccessToken(clientId, true);
+      blob = await downloadGoogleDriveFile(selected.id, token);
     }
 
-    store.setBusy({ label: `Carregando "${fileName}" no editor...`, progress: null });
+    const name = metadata.name || selected.name;
+    const file = new File([blob], name, { type: 'application/pdf' });
+
+    store.setBusy({ label: `Abrindo "${name}" no editor...`, progress: null });
     const openResult = await openFiles([file], {
       origin: 'google-drive',
       googleDrive: {
-        fileId: picked.id,
-        name: picked.name,
-        modifiedTime,
-        version,
-        mimeType: picked.mimeType,
+        fileId: selected.id,
+        name,
+        modifiedTime: metadata.modifiedTime,
+        version: metadata.version,
+        mimeType: metadata.mimeType || selected.mimeType,
       },
     });
 
-    if (openResult.openedFiles !== 1 || !openResult.openedDocumentIds?.[0]) {
-      const detail = openResult.errors.map((item) => item.message).filter(Boolean).join('; ');
-      throw new Error(detail || 'O PDF foi baixado, mas o editor não conseguiu registrar o documento.');
+    const documentId = openResult.openedDocumentIds?.[0];
+    if (openResult.openedFiles !== 1 || !documentId) {
+      const reason = openResult.errors.map((item) => item.message).filter(Boolean).join('; ');
+      throw new Error(reason || 'O PDF foi baixado, mas não foi possível abrir uma nova aba no editor.');
     }
 
-    useEditorStore.getState().setActiveDocument(openResult.openedDocumentIds[0]);
+    useEditorStore.getState().setActiveDocument(documentId);
     return { file, openResult };
   } catch (error) {
-    throw error instanceof Error ? error : new Error('Não foi possível abrir o PDF do Google Drive.');
+    throw error instanceof Error ? error : new Error('Falha ao abrir o PDF do Google Drive.');
   } finally {
     useEditorStore.getState().setBusy(null);
-    isOpeningDrive = false;
+    opening = false;
   }
 }
 
