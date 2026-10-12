@@ -261,15 +261,39 @@ export async function openPdfFromGoogleDrive(): Promise<OpenGoogleDriveResult | 
     const selected = await showGooglePicker(token, apiKey, appId);
     if (!selected) return null;
 
-    store.setBusy({ label: `Verificando "${selected.name}"...`, progress: null });
-    let metadata: Awaited<ReturnType<typeof getGoogleDriveFileMetadata>>;
+    // Metadata is useful for the later Save-to-Drive feature, but it is not a
+    // prerequisite for opening. First obtain a reliable name from the Picker;
+    // enrich it with Drive metadata if available.
+    let metadata: {
+      id: string;
+      name: string;
+      mimeType?: string;
+      modifiedTime?: string;
+      version?: string;
+      capabilities?: { canDownload?: boolean };
+    } = {
+      id: selected.id,
+      name: selected.name,
+      mimeType: selected.mimeType,
+    };
+
     try {
       metadata = await getGoogleDriveFileMetadata(selected.id, token);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('401')) throw error;
-      token = await requestGoogleAccessToken(clientId, true);
-      metadata = await getGoogleDriveFileMetadata(selected.id, token);
+      if (message.includes('401') || message.includes('expirada')) {
+        token = await requestGoogleAccessToken(clientId, true);
+        try {
+          metadata = await getGoogleDriveFileMetadata(selected.id, token);
+        } catch (retryError) {
+          // Do not block opening when optional metadata is unavailable.
+          console.warn('Google Drive metadata unavailable; opening using Picker data.', retryError);
+        }
+      } else {
+        // Some Drive files can be downloaded even when optional metadata fields
+        // are restricted. The file ID returned by Picker remains the authority.
+        console.warn('Google Drive metadata unavailable; opening using Picker data.', error);
+      }
     }
 
     if (metadata.mimeType && metadata.mimeType !== 'application/pdf') {
